@@ -632,11 +632,34 @@ fifty bytes changes nothing at all** — the next gain needs a whole block:
 * `.idata` under 512 — fifteen of the twenty one imports would have to go.
 
 Removing the high octave from the tune, for instance, takes `.text` from 4 080
-to 4 064 and the file stays at 5 632 bytes, to the byte. The classic peephole
-idioms — `push imm8`/`pop` instead of `mov r32, imm`, `cdq` instead of
-`xor edx, edx`, `xchg` instead of `mov` — are worth about 36 bytes across the
-whole source. Real, and 7 % of what a block costs. So 5 632 is the floor for
-this feature set, and everything below it costs an effect.
+to 4 064 and the file stays at 5 632 bytes, to the byte.
+
+Working through chapter 10 of Agner Fog's
+[*Optimizing subroutines in assembly language*](https://www.agner.org/optimize/optimizing_assembly.pdf)
+— the one reference that actually has a size chapter rather than a speed one —
+what is left on the table here is:
+
+| technique | worth |
+| --- | ---: |
+| `push imm8` / `pop` instead of `mov r32, imm` | 22 B |
+| `cdq` instead of `xor edx, edx`, `bt` instead of `test r32, imm32` | ~16 B |
+| avoiding REX prefixes by never touching `r8`–`r15` | 213 B, and unreachable |
+| not using `rbp` as a base register with no displacement | 3 B |
+
+The REX figure is a hard ceiling, not a plan: it assumes the whole program fits
+in the seven usable legacy registers, and `AlphaPass` alone keeps eight values
+live. A realistic sweep of all of it is worth **under a hundred bytes**, against
+480 for a block.
+
+Two things in that chapter are worth reading the other way round, because they
+are what the pass above was already doing without knowing it: *"instructions
+with pointers take one byte less when they have only a base pointer and a
+displacement than when they have a scaled index register"* — that is the
+interleaved record change — and *"64-bit code does not need more bytes for
+addresses than 32-bit code because it can use 32-bit RIP-relative addresses"*.
+
+So 5 632 is the floor for this feature set, and everything below it costs an
+effect.
 
 ## What did not work, and is worth knowing
 
