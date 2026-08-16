@@ -293,7 +293,8 @@ BuildLogo:
     movzx ecx, byte [r8 + rax]
     xor edx, edx                        ; bit, 0 = leftmost
 .bit:
-    mov eax, 7
+    push 7
+    pop rax
     sub eax, edx
     bt ecx, eax
     jnc .next_bit
@@ -681,7 +682,8 @@ BurnEdges:
     ; Smooth the heat along y. Each row walks on its own, so without this the
     ; fire is fine static; diffusing a little every frame builds the vertical
     ; correlation that turns it into tongues of different lengths.
-    mov r9d, 2
+    push 2
+    pop r9
 .smooth_pass:
     movzx r8d, byte [r10]               ; previous row, clamped at the top
     xor r12d, r12d
@@ -711,7 +713,8 @@ BurnEdges:
     lea rbx, [r14 + rax]
     movzx eax, byte [r10 + r12]
     mov byte [rbx], al                  ; source column, right at the tip
-    mov ecx, 1
+    push 1
+    pop rcx
 .cell:
     imul r15d, r15d, 1103515245
     add r15d, 12345
@@ -1005,7 +1008,8 @@ StartMusic:
     cmp r10d, 120
     jae .no_hat
     call NextRand
-    mov ecx, 120
+    push 120
+    pop rcx
     sub ecx, r10d
     shr ecx, 2                          ; a very short decaying noise burst
     test eax, 1
@@ -1054,12 +1058,14 @@ StartMusic:
 
     mov rcx, rsi
     mov rdx, rbx
-    mov r8d, 48
+    push 48
+    pop r8
     call waveOutPrepareHeader
 
     mov rcx, rsi
     mov rdx, rbx
-    mov r8d, 48
+    push 48
+    pop r8
     call waveOutWrite
 .done:
     add rsp, 72
@@ -1087,7 +1093,8 @@ DemoMain:
 
     lea rdi, [rsp + 112]
     xor eax, eax
-    mov ecx, 9
+    push 9
+    pop rcx
     rep stosq
 
     lea rax, [WndProc]
@@ -1100,7 +1107,8 @@ DemoMain:
 
     lea rdi, [rsp + 64]                 ; the last four arguments are NULL
     xor eax, eax
-    mov ecx, 4
+    push 4
+    pop rcx
     rep stosq
     mov qword [rsp + 32], 150
     mov qword [rsp + 40], 110
@@ -1140,7 +1148,8 @@ DemoMain:
     sub rsp, 128
     lea rdi, [rsp + 40]                 ; everything but weight and face name
     xor eax, eax
-    mov ecx, 8
+    push 8
+    pop rcx
     rep stosq
     mov qword [rsp + 32], 700
     lea rax, [scroll_font]
@@ -1173,7 +1182,8 @@ DemoMain:
     mov dword [scroll_x], SCR_W
 
     mov rcx, qword [window_handle]
-    mov edx, 1
+    push 1
+    pop rdx
     mov r8d, TIMER_MS
     xor r9d, r9d
     call SetTimer
@@ -1362,7 +1372,8 @@ WndProc:
     sub edx, eax                        ; brightness from depth
     cmp edx, 40
     jge .lum_ok
-    mov edx, 40
+    push 40
+    pop rdx
 .lum_ok:
     mov eax, edx                        ; white stars: R = G = B
     shl eax, 8

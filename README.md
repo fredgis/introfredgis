@@ -646,23 +646,27 @@ to 4 064 and the file stays at 5 632 bytes, to the byte.
 
 Working through chapter 10 of Agner Fog's
 [*Optimizing subroutines in assembly language*](https://www.agner.org/optimize/optimizing_assembly.pdf)
-— the one reference that actually has a size chapter rather than a speed one —
-what is left on the table here is:
+and the size-specific tricks from
+[Bartosz Wójcik's write-up](https://dev.to/bartosz/assembly-code-size-optimization-tricks-2abd),
+most of the classic peephole set was already in place — there is not a single
+`mov reg, 0` or `cmp reg, 0` left in the source. What remained:
 
-| technique | worth |
-| --- | ---: |
-| `push imm8` / `pop` instead of `mov r32, imm` | 22 B |
-| `cdq` instead of `xor edx, edx`, `bt` instead of `test r32, imm32` | ~16 B |
-| avoiding REX prefixes by never touching `r8`–`r15` | 213 B, and unreachable |
-| not using `rbp` as a base register with no displacement | 3 B |
+| technique | status |
+| --- | --- |
+| `push imm8` / `pop r64` instead of `mov r32, imm` | **applied**, 11 sites, **16 bytes measured** |
+| `xor`/`test` instead of `mov 0`/`cmp 0` | already everywhere, 0 sites left |
+| `cdq` instead of `xor edx, edx` | 6 bytes, needs `eax ≥ 0` proved at each site — not taken |
+| avoiding REX by never touching `r8`–`r15` | 213 bytes, and unreachable |
+| not using `rbp` as a base register with no displacement | 3 bytes |
 
 The REX figure is a hard ceiling, not a plan: it assumes the whole program fits
 in the seven usable legacy registers, and `AlphaPass` alone keeps eight values
-live. A realistic sweep of all of it is worth **under a hundred bytes**, against
-480 for a block.
+live. Everything realistically left is **under a hundred bytes**, against 480
+for a block — and the 16 bytes that *were* taken moved `.text` from 4 064 to
+4 048 and the file not at all.
 
-Two things in that chapter are worth reading the other way round, because they
-are what the pass above was already doing without knowing it: *"instructions
+Two things in Agner's chapter are worth reading the other way round, because
+they are what the pass above was already doing without knowing it: *"instructions
 with pointers take one byte less when they have only a base pointer and a
 displacement than when they have a scaled index register"* — that is the
 interleaved record change — and *"64-bit code does not need more bytes for
