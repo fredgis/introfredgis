@@ -10,6 +10,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/fredgis/introfredgis/releases/latest/download/fredgis.exe"><b>⬇ Download fredgis.exe</b> (5 632 bytes)</a> ·
   <a href="docs/fredgis.mp4">video with sound</a> ·
   <a href="docs/tune.wav">soundtrack only</a> ·
   <a href="#size">how it fits in 5 632 bytes</a>
@@ -63,6 +64,10 @@ and no support library is linked in: `start` is the raw entry point the loader
 jumps to, and the process ends with `ExitProcess`.
 
 ## Run
+
+Grab the binary from the
+[latest release](https://github.com/fredgis/introfredgis/releases/latest/download/fredgis.exe),
+or build it yourself with the two commands above.
 
 ```powershell
 .\fredgis.exe
