@@ -31,7 +31,6 @@ default rel
 %define WS_EX_LAYERED       0x00080000
 %define ULW_ALPHA           2
 %define BLEND_ARGB          0x01FF0000   ; AC_SRC_OVER, 255, AC_SRC_ALPHA
-%define IDC_ARROW           32512
 %define WM_DESTROY          0x0002
 %define WM_KEYDOWN          0x0100
 %define WM_TIMER            0x0113
@@ -69,11 +68,28 @@ default rel
 
 %define SND_HZ              8000         ; crunchy on purpose: this is the
                                          ; sample rate a 1990s intro would use
-%define SND_ROWS            64           ; a row is one arpeggio step
+%define SND_ROWS            128          ; two parts of eight seconds: the riff,
+                                         ; then the same thing an octave down
 %define SND_ROWLEN          1000         ; 125 ms, so the loop is eight seconds
 %define AUDIO_LEN           (SND_ROWS * SND_ROWLEN)
 
 %define STARS               200
+
+; Stars and rain drops are interleaved records walked with a pointer, not
+; parallel arrays indexed by a counter. Every field then reaches through a
+; small displacement instead of a seven byte lea of an absolute label, which
+; is where most of the code size in these loops used to go.
+%define ST_X                0
+%define ST_Y                4
+%define ST_Z                8
+%define ST_SX               12
+%define ST_SY               16
+%define ST_PX               20
+%define ST_PY               24
+%define ST_N                8            ; 32 bytes, so the walk is add rbx, 32
+%define RN_Y                0
+%define RN_V                4
+%define RN_N                2
 %define STAR_NEAR           26
 %define STAR_SPEED          5
 %define STAR_SPREAD         512          ; power of two: contiguous AND mask
@@ -90,29 +106,27 @@ default rel
 %define GLITCH              14
 
 %define SCROLL_H            20
+%define SCROLL_CW           13           ; Lucida Console is fixed pitch, so the
+                                         ; scroller width is a constant and does
+                                         ; not need GetTextExtentPoint32A
 %define SCROLL_Y            (SCR_H - 46)
 %define SCROLL_SPEED        2
 
 extern ExitProcess
-extern GetTickCount
-extern LoadCursorA
 extern RegisterClassA
 extern CreateWindowExA
 extern UpdateLayeredWindow
-extern DestroyWindow
 extern ReleaseCapture
 extern SendMessageA
 extern GetMessageA
 extern DispatchMessageA
 extern DefWindowProcA
 extern SetTimer
-extern PostQuitMessage
 extern CreateFontA
 extern SelectObject
 extern SetBkMode
 extern SetTextColor
 extern TextOutA
-extern GetTextExtentPoint32A
 extern CreateCompatibleDC
 extern CreateDIBSection
 extern GdiFlush
@@ -143,13 +157,18 @@ glyph_data:
 level_col     dd 0x00D8FFE8, 0x0044FF88, 0x0022E068, 0x001AC055
               dd 0x0012A044, 0x000C8034
 
-scroll_text   db "CONVICTION, CREATIVITY & DATA: THE FUEL OF THE MODERN "
-              db "ARCHITECT    ", 0
+scroll_text   db "CONVICTION & DATA: THE FUEL OF THE MODERN ARCHITECT    ", 0
 scroll_len    equ $ - scroll_text - 1
 
 ulw_size      dd SCR_W, SCR_H             ; constant arguments of the blit
 ulw_src       dd 0, 0
 ulw_blend     dd BLEND_ARGB
+
+dib_head      dd 40                       ; BITMAPINFOHEADER, a pure constant:
+              dd SCR_W                    ; built here rather than on the stack
+              dd -SCR_H                   ; negative height: top down rows
+              dw 1, 32                    ; biPlanes, biBitCount, BI_RGB
+              dd 0, 0, 0, 0, 0, 0
 
 ; One octave of phase increments for the 8 kHz oscillators: incr = f * 65536
 ; / SND_HZ, starting at C2. Any higher octave is the same value shifted left,
@@ -162,6 +181,12 @@ arp_tab       db 0x39, 0x40, 0x44, 0x49
               db 0x30, 0x34, 0x37, 0x40
               db 0x37, 0x3B, 0x42, 0x47
 bass_tab      db 0x19, 0x15, 0x10, 0x17
+
+; Octave offsets per part. Nothing goes up: at 8 kHz the Nyquist limit is
+; 4 kHz, and a pulse wave whose harmonics fold back around it turns to noise,
+; so the second half drops an octave instead of climbing one.
+part_lead     db 0, -16
+part_bass     db 0, -16
 
 wave_fmt      dw 1, 1                     ; WAVE_FORMAT_PCM, mono
               dd SND_HZ, SND_HZ           ; one byte per sample, so the byte
@@ -188,15 +213,9 @@ tip_r         resd SCR_H
 fire          resb 2 * SCR_H * FIRE_W     ; edge flames, left band then right
 src_heat      resb 2 * SCR_H              ; drifting heat feeding the flames
 colbits       resd LOGO_COLS              ; one bit per block row of the logo
-rain_y        resd LOGO_COLS              ; drop head, 1/64 of a block row
-rain_v        resd LOGO_COLS
-stars_x       resd STARS
-stars_y       resd STARS
-stars_z       resd STARS
-stars_sx      resd STARS
-stars_sy      resd STARS
-stars_px      resd STARS
-stars_py      resd STARS
+rain          resd LOGO_COLS * RN_N       ; drop head in 1/64 of a block row,
+                                          ; then its speed
+stars         resd STARS * ST_N           ; x, y, z, screen x/y, previous x/y
 wave_out      resq 1
 wave_hdr      resb 48                     ; WAVEHDR, x64 layout
 audio         resb AUDIO_LEN              ; the whole tune, rendered once
@@ -227,6 +246,10 @@ NextRand:
 ; ecx = x, edx = y, r8d = 0x00RRGGBB. Clobbers rax, r9, r10, r11 only.
 ; ----------------------------------------------------------------------------
 DrawBlock:
+    imul ecx, ecx, SCALE                ; block coordinates, scaled and offset
+    add ecx, dword [x_pos]              ; here rather than at the three call
+    imul edx, edx, SCALE                ; sites that used to do it themselves
+    add edx, dword [y_pos]
     mov eax, edx
     imul eax, eax, SCR_W
     add eax, ecx
@@ -252,15 +275,13 @@ DrawBlock:
 ; ever needs a bit test.
 ; ----------------------------------------------------------------------------
 BuildLogo:
+    push rdi
     lea r8, [glyph_data]
     lea r9, [colbits]
-    xor r10d, r10d
+    mov rdi, r9
     xor eax, eax
-.clear:
-    mov dword [r9 + r10 * 4], eax
-    inc r10d
-    cmp r10d, LOGO_COLS
-    jb .clear
+    mov ecx, LOGO_COLS
+    rep stosd
 
     xor r10d, r10d                      ; letter index
 .letter:
@@ -290,63 +311,53 @@ BuildLogo:
     inc r10d
     cmp r10d, 7
     jb .letter
+    pop rdi
     ret
 
 ; ----------------------------------------------------------------------------
-; Star r12d respawns far away. r13/r14/r15 = X/Y/Z bases.
+; The star rbx points at respawns far away.
 ; ----------------------------------------------------------------------------
 ResetStar:
-    push rbp
-    mov rbp, rsp
-    sub rsp, 32
     call NextRand
     and eax, (STAR_SPREAD * 2 - 1)
     sub eax, STAR_SPREAD
-    mov dword [r13 + r12 * 4], eax
+    mov dword [rbx + ST_X], eax
     call NextRand
     and eax, (STAR_SPREAD * 2 - 1)
     sub eax, STAR_SPREAD
-    mov dword [r14 + r12 * 4], eax
+    mov dword [rbx + ST_Y], eax
     call NextRand
     and eax, 255
     add eax, 384
-    mov dword [r15 + r12 * 4], eax
-    add rsp, 32
-    pop rbp
+    mov dword [rbx + ST_Z], eax
     ret
 
 ; ----------------------------------------------------------------------------
-; Perspective projection of star r12d.
+; Perspective projection of the star rbx points at.
 ; ----------------------------------------------------------------------------
 ProjectStar:
-    mov eax, dword [r13 + r12 * 4]
+    mov eax, dword [rbx + ST_X]
     imul eax, eax, STAR_FOV
     cdq
-    idiv dword [r15 + r12 * 4]
+    idiv dword [rbx + ST_Z]
     add eax, CX
-    lea rcx, [stars_sx]
-    mov dword [rcx + r12 * 4], eax
-    mov eax, dword [r14 + r12 * 4]
+    mov dword [rbx + ST_SX], eax
+    mov eax, dword [rbx + ST_Y]
     imul eax, eax, STAR_FOV
     cdq
-    idiv dword [r15 + r12 * 4]
+    idiv dword [rbx + ST_Z]
     add eax, CY
-    lea rcx, [stars_sy]
-    mov dword [rcx + r12 * 4], eax
+    mov dword [rbx + ST_SY], eax
     ret
 
 ; ----------------------------------------------------------------------------
 ; Freeze the current position as the tail of the trail.
 ; ----------------------------------------------------------------------------
 SyncTrail:
-    lea rcx, [stars_sx]
-    mov eax, dword [rcx + r12 * 4]
-    lea rcx, [stars_px]
-    mov dword [rcx + r12 * 4], eax
-    lea rcx, [stars_sy]
-    mov eax, dword [rcx + r12 * 4]
-    lea rcx, [stars_py]
-    mov dword [rcx + r12 * 4], eax
+    mov eax, dword [rbx + ST_SX]
+    mov dword [rbx + ST_PX], eax
+    mov eax, dword [rbx + ST_SY]
+    mov dword [rbx + ST_PY], eax
     ret
 
 ; ----------------------------------------------------------------------------
@@ -356,46 +367,39 @@ InitField:
     push rbp
     mov rbp, rsp
     push r12
-    push r13
-    push r14
-    push r15
+    push rbx
     sub rsp, 32
 
-    lea r13, [stars_x]
-    lea r14, [stars_y]
-    lea r15, [stars_z]
-    xor r12d, r12d
+    lea rbx, [stars]
+    mov r12d, STARS
 .stars:
     call ResetStar
     call NextRand                       ; spread the depths out
     and eax, 511
     add eax, STAR_NEAR + 8
-    mov dword [r15 + r12 * 4], eax
+    mov dword [rbx + ST_Z], eax
     call ProjectStar
     call SyncTrail
-    inc r12d
-    cmp r12d, STARS
-    jb .stars
+    add rbx, ST_N * 4
+    dec r12d
+    jnz .stars
 
-    lea r13, [rain_y]
-    lea r14, [rain_v]
-    xor r12d, r12d
+    lea rbx, [rain]
+    mov r12d, LOGO_COLS
 .rain:
     call NextRand
     and eax, 1023
-    mov dword [r13 + r12 * 4], eax
+    mov dword [rbx + RN_Y], eax
     call NextRand
     and eax, 15
     add eax, 3
-    mov dword [r14 + r12 * 4], eax
-    inc r12d
-    cmp r12d, LOGO_COLS
-    jb .rain
+    mov dword [rbx + RN_V], eax
+    add rbx, RN_N * 4
+    dec r12d
+    jnz .rain
 
     add rsp, 32
-    pop r15
-    pop r14
-    pop r13
+    pop rbx
     pop r12
     pop rbp
     ret
@@ -574,15 +578,15 @@ DrawTrail:
     sub r11d, edx
 
     mov eax, r10d                       ; steps = max(|dx|, |dy|)
-    mov r9d, eax
-    sar r9d, 31
-    xor eax, r9d
-    sub eax, r9d
+    test eax, eax
+    jns .abs_dx
+    neg eax
+.abs_dx:
     mov ecx, r11d
-    mov r9d, ecx
-    sar r9d, 31
-    xor ecx, r9d
-    sub ecx, r9d
+    test ecx, ecx
+    jns .abs_dy
+    neg ecx
+.abs_dy:
     cmp ecx, eax
     jle .have_n
     mov eax, ecx
@@ -768,7 +772,6 @@ BurnEdges:
 ; ----------------------------------------------------------------------------
 AlphaPass:
     push rbp
-    mov rbp, rsp
     push rbx
     push rsi
     push rdi
@@ -781,18 +784,17 @@ AlphaPass:
     mov r14, qword [pixels]
     lea rbx, [fire]
     lea r15, [fire + SCR_H * FIRE_W]
-    xor r12d, r12d
+    lea rbp, [tip_l]                    ; rbp is spare here, and tip_r follows
+    xor r12d, r12d                      ; tip_l, so one base covers both
 .row:
     mov r11d, 256                       ; colour scale for this row
     test r12d, 1
     jz .scan_ok
     mov r11d, SCANLINE
 .scan_ok:
-    lea rax, [tip_l]                    ; where the two flame fronts start
-    mov esi, dword [rax + r12 * 4]
+    mov esi, dword [rbp + r12 * 4]      ; where the two flame fronts start
     add esi, FLAME_IN
-    lea rax, [tip_r]
-    mov edi, dword [rax + r12 * 4]
+    mov edi, dword [rbp + r12 * 4 + (tip_r - tip_l)]
     sub edi, FLAME_IN
     xor ecx, ecx
 .col:
@@ -845,15 +847,11 @@ AlphaPass:
     paddusb xmm0, xmm1
     movd dword [r14 + rcx * 4], xmm0
 .no_flame:
-    test r10d, r10d
-    jz .clear
-    mov eax, r10d
-    imul eax, r11d
-    shr eax, 8
-    cmp eax, 255
-    jae .opaque
-    mov edx, dword [r14 + rcx * 4]      ; premultiply the three channels
-    movzx r8d, dl
+    mov eax, r10d                       ; one path for every pixel: coverage 0
+    imul eax, r11d                      ; premultiplies to a transparent black
+    shr eax, 8                          ; and coverage 255 to the pixel itself,
+    mov edx, dword [r14 + rcx * 4]      ; so the two shortcuts they used to have
+    movzx r8d, dl                       ; were pure code size
     imul r8d, eax
     shr r8d, 8
     shr edx, 8
@@ -871,12 +869,6 @@ AlphaPass:
     shl r10d, 24                        ; alpha keeps the untouched coverage
     or edx, r10d
     mov dword [r14 + rcx * 4], edx
-    jmp .next
-.opaque:
-    or dword [r14 + rcx * 4], 0xFF000000
-    jmp .next
-.clear:
-    mov dword [r14 + rcx * 4], 0
 .next:
     inc ecx
     cmp ecx, SCR_W
@@ -936,7 +928,6 @@ NoteIncr:
 ; ----------------------------------------------------------------------------
 StartMusic:
     push rbp
-    mov rbp, rsp
     push rbx
     push r12
     push r13
@@ -946,24 +937,35 @@ StartMusic:
     push rdi
     sub rsp, 72
 
-    lea rdi, [audio]
+    lea rbp, [arp_tab]                  ; the four tables are laid out back to
+    lea rdi, [audio]                    ; back, so one base reaches all of them
     xor r12d, r12d                      ; row
     xor r14d, r14d                      ; bass phase
     xor r15d, r15d                      ; lead phase
 .row:
+    mov r8d, r12d
+    shr r8d, 6                          ; which part of the tune we are in
     mov r9d, r12d
-    shr r9d, 4                          ; one chord every sixteen rows
-    lea rsi, [bass_tab]
-    movzx ecx, byte [rsi + r9]
+    shr r9d, 4
+    and r9d, 3                          ; one chord every sixteen rows
+
+    movzx ecx, byte [rbp + r9 + (bass_tab - arp_tab)]
+    movsx edx, byte [rbp + r8 + (part_bass - arp_tab)]
+    add ecx, edx
     call NoteIncr
     mov r13d, ebx                       ; bass increment for this row
 
     mov eax, r12d
     and eax, 3                          ; the arpeggio walks the chord, one
-    lea rdx, [r9 * 4]                   ; note per row
+    test r8d, r8d                       ; note per row, and turns around to
+    jz .arp_up                          ; walk back down on the low half
+    xor eax, 3
+.arp_up:
+    lea rdx, [r9 * 4]
     add rax, rdx
-    lea rsi, [arp_tab]
-    movzx ecx, byte [rsi + rax]
+    movzx ecx, byte [rbp + rax]
+    movsx edx, byte [rbp + r8 + (part_lead - arp_tab)]
+    add ecx, edx
     call NoteIncr                       ; lead increment stays in ebx
 
     mov r11d, SND_ROWLEN
@@ -1042,19 +1044,21 @@ StartMusic:
     test eax, eax
     jnz .done                           ; no output device: just run silent
 
+    lea rbx, [wave_hdr]                 ; one base for the whole header
     lea rax, [audio]
-    mov qword [wave_hdr], rax
-    mov dword [wave_hdr + 8], AUDIO_LEN
-    mov dword [wave_hdr + 24], 0x0C     ; WHDR_BEGINLOOP | WHDR_ENDLOOP
-    mov dword [wave_hdr + 28], -1       ; and never stop looping
+    mov qword [rbx], rax
+    mov dword [rbx + 8], AUDIO_LEN
+    mov dword [rbx + 24], 0x0C          ; WHDR_BEGINLOOP | WHDR_ENDLOOP
+    mov dword [rbx + 28], -1            ; and never stop looping
+    mov rsi, qword [wave_out]
 
-    mov rcx, qword [wave_out]
-    lea rdx, [wave_hdr]
+    mov rcx, rsi
+    mov rdx, rbx
     mov r8d, 48
     call waveOutPrepareHeader
 
-    mov rcx, qword [wave_out]
-    lea rdx, [wave_hdr]
+    mov rcx, rsi
+    mov rdx, rbx
     mov r8d, 48
     call waveOutWrite
 .done:
@@ -1077,14 +1081,9 @@ DemoMain:
     push rdi
     sub rsp, 320
 
-    call GetTickCount                   ; moving seed: the planks are torn
-    or eax, 1                           ; differently on every launch
-    mov dword [rng_seed], eax
-
-    xor ecx, ecx
-    mov edx, IDC_ARROW
-    call LoadCursorA
-    mov qword [rsp + 240], rax
+    rdtsc                               ; a moving seed with no import at all:
+    or eax, 1                           ; the planks are torn differently on
+    mov dword [rng_seed], eax           ; every launch
 
     lea rdi, [rsp + 112]
     xor eax, eax
@@ -1093,15 +1092,11 @@ DemoMain:
 
     lea rax, [WndProc]
     mov qword [rsp + 120], rax          ; lpfnWndProc, NULL hInstance is fine
-    mov rax, qword [rsp + 240]
-    mov qword [rsp + 152], rax          ; hCursor
-    lea rax, [class_name]
-    mov qword [rsp + 176], rax          ; lpszClassName
+    lea rax, [class_name]               ; hCursor stays NULL: the pointer keeps
+    mov qword [rsp + 176], rax          ; whatever shape it already had
 
     lea rcx, [rsp + 112]
     call RegisterClassA
-    test ax, ax
-    jz .fail
 
     lea rdi, [rsp + 64]                 ; the last four arguments are NULL
     xor eax, eax
@@ -1116,41 +1111,28 @@ DemoMain:
     xor r8d, r8d
     mov r9d, WS_POPUP_VISIBLE
     call CreateWindowExA
-    test rax, rax
-    jz .fail
     mov qword [window_handle], rax
 
     ; ---- back buffer we can both draw on with GDI and poke byte by byte
     xor ecx, ecx
     call CreateCompatibleDC
+    mov r12, rax                        ; the DC is wanted five more times
     mov qword [mem_dc], rax
 
-    lea rdi, [rsp + 248]
-    xor eax, eax
-    mov ecx, 5
-    rep stosq
-    mov dword [rsp + 248], 40           ; biSize
-    mov dword [rsp + 252], SCR_W
-    mov dword [rsp + 256], -SCR_H       ; negative height: top down rows
-    mov word [rsp + 260], 1             ; biPlanes
-    mov word [rsp + 262], 32            ; biBitCount, BI_RGB
-
-    mov rcx, qword [mem_dc]
-    lea rdx, [rsp + 248]
+    mov rcx, r12
+    lea rdx, [dib_head]                 ; a constant, so it lives in .text
     xor r8d, r8d
     lea r9, [rsp + 288]
-    mov qword [rsp + 32], 0
-    mov qword [rsp + 40], 0
+    mov qword [rsp + 32], r8
+    mov qword [rsp + 40], r8
     call CreateDIBSection
-    test rax, rax
-    jz .fail
-    mov rcx, qword [mem_dc]
+    mov rcx, r12
     mov rdx, rax
     call SelectObject
     mov rax, qword [rsp + 288]
     mov qword [pixels], rax
 
-    mov rcx, qword [mem_dc]
+    mov rcx, r12
     mov edx, TRANSPARENT
     call SetBkMode
 
@@ -1169,20 +1151,14 @@ DemoMain:
     xor r9d, r9d
     call CreateFontA
     add rsp, 128
-    mov rcx, qword [mem_dc]
+    mov rcx, r12
     mov rdx, rax
     call SelectObject
-    mov rcx, qword [mem_dc]
+    mov rcx, r12
     mov edx, 0x0040E060
     call SetTextColor
 
-    mov rcx, qword [mem_dc]
-    lea rdx, [scroll_text]
-    mov r8d, scroll_len
-    lea r9, [rsp + 296]
-    call GetTextExtentPoint32A
-    mov eax, dword [rsp + 296]
-    mov dword [scroll_w], eax
+    mov dword [scroll_w], scroll_len * SCROLL_CW
 
     call BuildLogo
     call MakeMask
@@ -1214,12 +1190,8 @@ DemoMain:
     call DispatchMessageA
     jmp .message_loop
 
-.fail:
-    mov eax, 1
-    jmp .return
 .quit:
     xor eax, eax
-.return:
     add rsp, 320
     pop rdi
     pop r12
@@ -1245,7 +1217,8 @@ WndProc:
     push r13
     push r14
     push r15
-    sub rsp, 176
+    push rbx
+    sub rsp, 184
 
     mov qword [rsp + 80], rcx
 
@@ -1263,11 +1236,9 @@ WndProc:
 .key:
     cmp r8d, VK_ESCAPE
     jne .zero
-    mov rcx, qword [rsp + 80]
-    call DestroyWindow
-.zero:
-    xor eax, eax
-    jmp .done
+.destroy:
+    xor ecx, ecx                        ; no DestroyWindow, no PostQuitMessage,
+    call ExitProcess                    ; no message pump teardown: just leave
 
 .drag:
     call ReleaseCapture
@@ -1276,20 +1247,11 @@ WndProc:
     mov r8d, HTCAPTION
     xor r9d, r9d
     call SendMessageA
-    xor eax, eax
-    jmp .done
-
-.destroy:
-    xor ecx, ecx
-    call PostQuitMessage
-    xor eax, eax
-    jmp .done
+    jmp .zero
 
 ; ------------------------------------------------------------------ update --
 .frame:
     inc dword [frame_counter]
-    mov rax, qword [mem_dc]
-    mov qword [rsp + 88], rax
 
     mov eax, dword [scroll_x]
     sub eax, SCROLL_SPEED
@@ -1329,44 +1291,39 @@ WndProc:
 .y_ok:
     mov dword [y_pos], eax
 
-    lea r13, [rain_y]                   ; drops fall in 1/64 of a block row
-    lea r14, [rain_v]
-    xor r12d, r12d
+    lea rbx, [rain]                     ; drops fall in 1/64 of a block row
+    mov r12d, LOGO_COLS
 .rain_step:
-    mov eax, dword [r13 + r12 * 4]
-    add eax, dword [r14 + r12 * 4]
+    mov eax, dword [rbx + RN_Y]
+    add eax, dword [rbx + RN_V]
     cmp eax, (GLYPH_ROWS + RAIN_TRAIL) * 64
     jl .rain_store
     call NextRand
     and eax, 15
     add eax, 3
-    mov dword [r14 + r12 * 4], eax
+    mov dword [rbx + RN_V], eax
     xor eax, eax
 .rain_store:
-    mov dword [r13 + r12 * 4], eax
-    inc r12d
-    cmp r12d, LOGO_COLS
-    jb .rain_step
+    mov dword [rbx + RN_Y], eax
+    add rbx, RN_N * 4
+    dec r12d
+    jnz .rain_step
 
-    lea r13, [stars_x]
-    lea r14, [stars_y]
-    lea r15, [stars_z]
-    xor r12d, r12d
+    lea rbx, [stars]
+    mov r12d, STARS
 .star_step:
     call SyncTrail
-    mov eax, dword [r15 + r12 * 4]
+    mov eax, dword [rbx + ST_Z]
     sub eax, STAR_SPEED
-    mov dword [r15 + r12 * 4], eax
+    mov dword [rbx + ST_Z], eax
     cmp eax, STAR_NEAR
     jle .star_reset
 
     call ProjectStar
-    lea rcx, [stars_sx]
-    mov eax, dword [rcx + r12 * 4]
+    mov eax, dword [rbx + ST_SX]
     cmp eax, SCR_W
     jae .star_reset                     ; unsigned: catches negatives too
-    lea rcx, [stars_sy]
-    mov eax, dword [rcx + r12 * 4]
+    mov eax, dword [rbx + ST_SY]
     cmp eax, SCR_H
     jb .star_next
 .star_reset:
@@ -1374,19 +1331,19 @@ WndProc:
     call ProjectStar
     call SyncTrail
 .star_next:
-    inc r12d
-    cmp r12d, STARS
-    jb .star_step
+    add rbx, ST_N * 4
+    dec r12d
+    jnz .star_step
 
 ; ------------------------------------------------------------------ render --
-    mov r8, qword [pixels]              ; clear the frame, two pixels at a time
+    push rdi                            ; clear the frame, eight bytes at a time
+    mov rdi, qword [pixels]
+    xor eax, eax
     mov ecx, SCR_W * SCR_H / 2
-.clear:
-    dec ecx
-    mov qword [r8 + rcx * 8], 0
-    jnz .clear
+    rep stosq
+    pop rdi
 
-    mov rcx, qword [rsp + 88]
+    mov rcx, qword [mem_dc]
     mov edx, dword [scroll_x]
     mov r8d, SCROLL_Y
     lea r9, [scroll_text]
@@ -1396,10 +1353,10 @@ WndProc:
     ; GDI batches its work, so flush before writing to the bits by hand
     call GdiFlush
 
-    lea r15, [stars_z]
-    xor r12d, r12d
+    lea rbx, [stars]
+    mov r12d, STARS
 .star_draw:
-    mov eax, dword [r15 + r12 * 4]
+    mov eax, dword [rbx + ST_Z]
     shr eax, 2
     mov edx, 255
     sub edx, eax                        ; brightness from depth
@@ -1412,39 +1369,29 @@ WndProc:
     or edx, eax
     shl eax, 8
     or edx, eax
-    mov dword [rsp + 128], edx
+    mov r14d, edx                       ; the colour is needed twice
 
-    lea rcx, [stars_px]
-    mov eax, dword [rcx + r12 * 4]
-    mov dword [rsp + 120], eax
-    lea rcx, [stars_py]
-    mov eax, dword [rcx + r12 * 4]
-    mov dword [rsp + 124], eax
-    lea rcx, [stars_sx]
-    mov r13d, dword [rcx + r12 * 4]
-    lea rcx, [stars_sy]
-    mov r14d, dword [rcx + r12 * 4]
-
-    mov ecx, r13d                       ; head, then tail
-    mov edx, r14d
-    mov r8d, dword [rsp + 120]
-    mov r9d, dword [rsp + 124]
-    mov eax, dword [rsp + 128]
+    mov ecx, dword [rbx + ST_SX]        ; head, then tail
+    mov edx, dword [rbx + ST_SY]
+    mov r8d, dword [rbx + ST_PX]
+    mov r9d, dword [rbx + ST_PY]
+    mov eax, r14d
     call DrawTrail
 
-    cmp dword [r15 + r12 * 4], STAR_FAT ; the closest ones are drawn twice
+    cmp dword [rbx + ST_Z], STAR_FAT    ; the closest ones are drawn twice
     jg .star_thin
-    lea ecx, [r13 + 1]
-    mov edx, r14d
-    mov r8d, dword [rsp + 120]
+    mov ecx, dword [rbx + ST_SX]
+    inc ecx
+    mov edx, dword [rbx + ST_SY]
+    mov r8d, dword [rbx + ST_PX]
     inc r8d
-    mov r9d, dword [rsp + 124]
-    mov eax, dword [rsp + 128]
+    mov r9d, dword [rbx + ST_PY]
+    mov eax, r14d
     call DrawTrail
 .star_thin:
-    inc r12d
-    cmp r12d, STARS
-    jb .star_draw
+    add rbx, ST_N * 4
+    dec r12d
+    jnz .star_draw
 
     ; ------------------------------------------------------------- the logo --
     ; every lit block of the font first, in the dim base colour
@@ -1457,11 +1404,7 @@ WndProc:
     bt r13d, r14d
     jnc .logo_next
     mov ecx, r12d
-    imul ecx, ecx, SCALE
-    add ecx, dword [x_pos]
     mov edx, r14d
-    imul edx, edx, SCALE
-    add edx, dword [y_pos]
     mov r8d, 0x000A4018
     call DrawBlock
 .logo_next:
@@ -1475,10 +1418,10 @@ WndProc:
     ; then the Matrix drops, one colour per depth in the trail
     xor r13d, r13d
 .rain_depth:
+    lea rbx, [rain]
     xor r12d, r12d
 .rain_col:
-    lea rax, [rain_y]
-    mov eax, dword [rax + r12 * 4]
+    mov eax, dword [rbx + RN_Y]
     sar eax, 6                          ; head, in block rows
     sub eax, r13d
     js .rain_next
@@ -1490,15 +1433,12 @@ WndProc:
     jnc .rain_next
 
     mov edx, eax
-    imul edx, edx, SCALE
-    add edx, dword [y_pos]
     mov ecx, r12d
-    imul ecx, ecx, SCALE
-    add ecx, dword [x_pos]
     lea rax, [level_col]
     mov r8d, dword [rax + r13 * 4]
     call DrawBlock
 .rain_next:
+    add rbx, RN_N * 4
     inc r12d
     cmp r12d, LOGO_COLS
     jb .rain_col
@@ -1538,11 +1478,7 @@ WndProc:
     jc .glitch_next
 .glitch_draw:
     mov ecx, r15d
-    imul ecx, ecx, SCALE
-    add ecx, dword [x_pos]
     mov edx, r14d
-    imul edx, edx, SCALE
-    add edx, dword [y_pos]
     mov r8d, 0x00186A2A
     call DrawBlock
 .glitch_next:
@@ -1557,19 +1493,22 @@ WndProc:
     xor edx, edx
     xor r8d, r8d
     lea r9, [ulw_size]
-    mov rax, qword [rsp + 88]
+    mov rax, qword [mem_dc]
     mov qword [rsp + 32], rax
     lea rax, [ulw_src]
     mov qword [rsp + 40], rax
-    mov qword [rsp + 48], 0
+    mov qword [rsp + 48], r8
     lea rax, [ulw_blend]
     mov qword [rsp + 56], rax
     mov qword [rsp + 64], ULW_ALPHA
     call UpdateLayeredWindow
+
+.zero:
     xor eax, eax
 
 .done:
-    add rsp, 176
+    add rsp, 184
+    pop rbx
     pop r15
     pop r14
     pop r13

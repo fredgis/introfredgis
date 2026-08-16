@@ -1,12 +1,25 @@
-# FREDGIS
-
-A 1990s style cracktro for Windows x64, written in **pure NASM assembly**.
-No C, no runtime library, no framework, no external asset: **7 168 bytes** on
-disk, four system DLLs, one source file — graphics *and* a chiptune.
+<h1 align="center">FREDGIS</h1>
 
 <p align="center">
-  <img src="docs/fredgis.gif" alt="FREDGIS" width="620">
+  <b>A 1990s cracktro for Windows x64, in 5 632 bytes of pure NASM assembly.</b><br>
+  <sub>no C · no runtime library · no framework · no external asset · one source file</sub>
 </p>
+
+<p align="center">
+  <img src="docs/fredgis.gif" alt="FREDGIS" width="640">
+</p>
+
+<p align="center">
+  <a href="docs/fredgis.mp4">video with sound</a> ·
+  <a href="docs/tune.wav">soundtrack only</a> ·
+  <a href="#size">how it fits in 5 632 bytes</a>
+</p>
+
+<p align="center">
+  <img src="docs/bytes.png" alt="byte budget" width="880">
+</p>
+
+---
 
 The window is not a rectangle. It is a stack of horizontal planks whose torn
 ends burn away into grey ash and green blue embers, and the whole thing is
@@ -14,17 +27,15 @@ see-through, so the desktop stays visible behind it. Every pixel — the letters
 the fire, the stars, the transparency — is rasterised by hand into a memory
 bitmap, and the music is synthesised sample by sample into a byte array.
 
-Sound only: [`docs/tune.wav`](docs/tune.wav) · with picture:
-[`docs/fredgis.mp4`](docs/fredgis.mp4)
-
 ---
 
 ## Contents
 
 | File | Purpose |
 | --- | --- |
-| `fredgis.asm` | The whole demo. ~1 450 lines of NASM, 26 imported symbols. |
+| `fredgis.asm` | The whole demo. ~1 450 lines of NASM, 21 imported symbols. |
 | `tiny.ld` | Custom linker script that discards every section the linker emits by default and that this program has no use for. |
+| `pecompact.ps1` | Post link step that shrinks the padded PE header block from 512 to 0 wasted bytes. |
 | `build.ps1` | One command build. |
 | `docs/` | Screenshots, the animated capture and the soundtrack. |
 
@@ -44,6 +55,7 @@ $lib = Join-Path (Split-Path (Split-Path (Get-Command ld).Source)) "x86_64-w64-m
 nasm -Ox -f win64 fredgis.asm -o fredgis.o
 ld -mi386pep --subsystem windows -e start -s -T tiny.ld -o fredgis.exe `
    fredgis.o "-L$lib" -lkernel32 -luser32 -lgdi32 -lwinmm
+.\pecompact.ps1 -Path .\fredgis.exe
 ```
 
 `ld` is used only as a PE writer and import table generator. No startup object
@@ -60,7 +72,7 @@ jumps to, and the process ends with `ExitProcess`.
 * **Escape** to quit.
 
 Every launch is different: the plank silhouette, the starfield and the fire are
-all seeded from `GetTickCount`.
+all seeded from `rdtsc`.
 
 ![screenshot](docs/demo.png)
 
@@ -375,8 +387,7 @@ of a block row so they can fall at fractional speeds, and the trail is four
 palette entries deep:
 
 ```nasm
-    lea rax, [rain_y]
-    mov eax, dword [rax + r12 * 4]
+    mov eax, dword [rbx + RN_Y]
     sar eax, 6                          ; head, in block rows
     sub eax, r13d
     js .rain_next
@@ -409,7 +420,7 @@ only, never alpha**, or half the window would go see-through.
 ## 8. `StartMusic` — the chiptune
 
 A cracktro without music is a screensaver. The soundtrack is generated, not
-loaded: an 8 kHz, 8 bit, mono PCM buffer of exactly eight seconds is rendered
+loaded: an 8 kHz, 8 bit, mono PCM buffer of exactly sixteen seconds is rendered
 into `.bss` at startup and then handed to the mixer **on an infinite hardware
 loop**, so the demo spends zero instructions per frame on audio.
 
@@ -510,56 +521,132 @@ second run.
 
 ---
 
+<a name="size"></a>
+
 # Size
 
-The demo is **7 168 bytes**. Getting there was mostly a fight with the PE
-layout rather than with the code.
+The demo is **5 632 bytes**, sound included. Getting there was a fight with the
+PE layout at least as much as with the code.
 
 A PE file is `SizeOfHeaders` plus every section rounded up to the 512 byte file
-alignment, so the real currency is *sections*, not instructions:
+alignment, so the real currency is *blocks*, not instructions:
 
 ```
-headers   0x400
-.text     0x1200  →  0x1200       (4608 of 4608 used, to the byte)
-.idata    0x0498  →  0x0600       (1176 of 1536 used)
+headers   0x0200                        (448 of 512 used)
+.text     0x0FE0  →  0x1000             (4064 of 4096 used)
+.idata    0x03DC  →  0x0400             ( 988 of 1024 used)
                      ------
-                     0x1C00  =  7168
+                     0x1600  =  5632
 ```
 
-The graphics-only build was **6 144 bytes**. Adding sound cost exactly two
-alignment blocks: one because `.text` crossed 0x1000, one because the three
-`winmm` imports pushed `.idata` past 0x400. The synthesis code itself is about
-330 bytes and the tune data is 62.
+![byte budget](docs/bytes.png)
 
-`.text` is now full to the byte, which is not a figure of speech: the last
-build was 16 bytes over the cliff and only fit after two amplitude `imul`s
-became shifts, two zero stores became register stores, and six trailing spaces
-were cut from the scroll text.
+## The journey
 
-What worked:
+| | bytes | what changed |
+| --- | ---: | --- |
+| first working build | 7 168 | default linker script, 28 imports |
+| `tiny.ld` | 6 656 | discard the sections a freestanding program never uses |
+| import and code diet | 6 144 | 28 symbols → 23, `BitBlt` and the GDI line API replaced by hand written loops |
+| **+ 16 s chiptune** | 7 168 | `.text` crossed 0x1000 and `winmm` pushed `.idata` past 0x400: two blocks |
+| optimisation pass | 6 656 | five imports deleted outright |
+| optimisation pass | 6 144 | interleaved records, hoisted bases, dead fast paths removed |
+| `pecompact.ps1` | **5 632** | the padded header block |
 
-* **`tiny.ld`.** The linker's built in script emits constructor marker sections,
-  `.edata`, `.tls`, `.didat` and pseudo-reloc sections that a freestanding
-  program has no use for. Discarding them dropped 7 168 → 6 656 bytes.
-* **A looping `waveOut` buffer** instead of streaming. Rendering the tune once
-  and setting `dwLoops = -1` removed the callback, the second buffer and the
-  bookkeeping that goes with them.
-* **Fewer imports.** 28 symbols down to 23 for the graphics. `BitBlt` became an
-  inline qword clear loop; `GetStockObject`, `SetDCPenColor`, `MoveToEx` and
-  `LineTo` were replaced by `DrawTrail`.
-* **Code diet.** Runs of `mov qword [rsp+N], 0` before the big API calls became
-  `rep stosq`; the constant `SIZE`, `POINT` and `BLENDFUNCTION` structures moved
-  out of the stack frame into `.text` literals; the scroll text was trimmed to
-  fit the remaining bytes.
+The graphics-only demo was 6 144 bytes. It now has a soundtrack **and** is
+512 bytes smaller than it was without one.
 
-What did not work, and is worth knowing:
+## What actually moved the needle
+
+**1. Deleting imports, not instructions.** `.idata` was 1 176 bytes, a mere 152
+over a block boundary. Five imports had to go, and each one had a replacement
+that was smaller than the call it removed:
+
+| removed | replaced by |
+| --- | --- |
+| `GetTickCount` | `rdtsc` — two bytes, and a better seed |
+| `GetTextExtentPoint32A` | Lucida Console is fixed pitch, so the scroller width is `scroll_len * 13` at assembly time |
+| `LoadCursorA` | a NULL `hCursor`: the pointer simply keeps the shape it had |
+| `DestroyWindow`, `PostQuitMessage` | Escape calls `ExitProcess` directly. There is nothing to tear down |
+
+That single change was worth 512 bytes of file.
+
+**2. Interleaving the tables.** The stars used to be seven parallel arrays, so
+every field access needed a seven byte `lea` of an absolute label — `.bss`
+arrays cannot be written as `[label + reg*4]`, NASM emits a relocation `ld`
+refuses. Turning them into one 32 byte record walked by a pointer turned every
+access into a displacement:
+
+```nasm
+SyncTrail:                              ; was 45 bytes of lea, now 13
+    mov eax, dword [rbx + ST_SX]
+    mov dword [rbx + ST_PX], eax
+    mov eax, dword [rbx + ST_SY]
+    mov dword [rbx + ST_PY], eax
+    ret
+```
+
+There were 72 of those `lea`s in the source, 504 bytes of pure addressing.
+
+Worth noting that this is the *opposite* of what every performance guide tells
+you. Structure-of-arrays is the layout that feeds SIMD and keeps cache lines
+dense; array-of-structures is the one that keeps instruction encodings short.
+Optimising for bytes and optimising for cycles pull in different directions,
+and here bytes won — measured cost of the whole demo afterwards: **3 % of one
+core**.
+
+**3. Hoisting bases into spare registers.** `rbp` is a frame pointer by habit,
+not by need. `AlphaPass` and `StartMusic` both address everything through
+`rsp`, so `rbp` was free to hold a table base — and because the four tune
+tables are laid out back to back, one base reaches all of them:
+
+```nasm
+    lea rbp, [arp_tab]                  ; the four tables are laid out back to
+    ...                                 ; back, so one base reaches all of them
+    movzx ecx, byte [rbp + r9 + (bass_tab - arp_tab)]
+    movsx edx, byte [rbp + r8 + (part_bass - arp_tab)]
+```
+
+**4. Deleting fast paths that were not faster.** `AlphaPass` had two shortcuts:
+one for fully transparent pixels, one for fully opaque ones. Working through
+the arithmetic, the general path produces *exactly* the same bytes in both
+cases — coverage 0 premultiplies every channel to zero, coverage 255 leaves the
+pixel within one 255ths of itself. Twenty-eight bytes of code for nothing. That
+deletion is what put `.text` at 4 096 on the nose.
+
+**5. The padded header block.** `ld` sets `SizeOfHeaders` to 0x400 even though
+the DOS stub, the COFF and optional headers and the three section headers all
+end at 0x200. That is a full alignment block of zeroes in the middle of the
+file. `pecompact.ps1` rewrites `SizeOfHeaders`, pulls every section's
+`PointerToRawData` down by 512 and drops the padding. Nothing exotic: plenty of
+linkers emit 0x200 to begin with.
+
+## Where it stops
+
+`.text` holds 4 064 bytes in a 4 096 block and `.idata` 988 in a 1 024 block.
+Because the file is quantised in 512 byte steps, **shaving another twenty or
+fifty bytes changes nothing at all** — the next gain needs a whole block:
+
+* `.text` under 3 584 — 480 more bytes, roughly the size of the entire music
+  routine or the whole starfield.
+* `.idata` under 512 — fifteen of the twenty one imports would have to go.
+
+Removing the high octave from the tune, for instance, takes `.text` from 4 080
+to 4 064 and the file stays at 5 632 bytes, to the byte. The classic peephole
+idioms — `push imm8`/`pop` instead of `mov r32, imm`, `cdq` instead of
+`xor edx, edx`, `xchg` instead of `mov` — are worth about 36 bytes across the
+whole source. Real, and 7 % of what a block costs. So 5 632 is the floor for
+this feature set, and everything below it costs an effect.
+
+## What did not work, and is worth knowing
 
 * **`--file-alignment 16 --section-alignment 16`** produces a 2 KB file that the
   **x64 loader refuses to run**. On x64, `SectionAlignment` must be ≥ 0x1000.
-* **Merging `.idata` into `.text`** gives 2 sections and 5 632 bytes, but
-  Windows Defender **deletes the binary on sight**: a single loaded section with
-  the import table inside executable code is a textbook packer signature. Not
-  worth 512 bytes.
+* **Merging `.idata` into `.text`** saves nothing once the arithmetic is done,
+  and Windows Defender **deletes the binary on sight**: a single loaded section
+  with the import table inside executable code is a textbook packer signature.
+* **A self decompressing build** would fit in about 4 608 bytes, and would be
+  flagged by every heuristic scanner for exactly the same reason. Not worth it.
 * **Merging `.bss` into `.data`** turns the uninitialised arrays into raw file
   contents. The executable went from 6 KB to **206 KB**.
 
@@ -570,13 +657,23 @@ What did not work, and is worth knowing:
 A few things that cost real debugging time:
 
 * `.bss` arrays cannot be addressed as `[label + reg*4]`. NASM emits a 32-bit
-  absolute relocation and `ld` fails with *relocation truncated to fit*. Always
-  `lea` the base into a register first — hence the `lea rax, [rain_y]` that
-  precedes every table access in this source.
+  absolute relocation and `ld` fails with *relocation truncated to fit*. The
+  base has to go through a register first — which is what eventually pushed the
+  whole design towards interleaved records.
+* **`rsi` and `rdi` are non-volatile on Windows.** Every System V reference you
+  will find lists them as scratch, and they are — on Linux. Under the
+  [Microsoft x64 convention](https://learn.microsoft.com/en-us/cpp/build/x64-calling-convention)
+  the non-volatile set is `rbx, rbp, rdi, rsi, rsp, r12-r15`, and `WndProc` is
+  called by the system, so anything it touches has to come back. Freeing `rbp`
+  as a general register during the size pass meant re-checking all of it:
+  every prologue push, 16-byte alignment at each call site, and the 32-byte
+  shadow store the *caller* has to reserve.
 * Random masks must be `2^n − 1`. A non power of two `and` silently ruins the
   distribution; the starfield collapsed into a cross before this was fixed.
 * At function entry on x64, `rsp ≡ 8 (mod 16)`; a `push rbp` restores alignment.
   Getting this wrong crashes deep inside GDI, far from the actual mistake.
+* At 8 kHz, anything above 4 kHz folds back. An octave too high turned the lead
+  into noise, which is why the tune goes *down* for its second half instead of up.
 * Scaling *alpha* instead of *colour* in the scanline pass makes every odd row
   translucent and the whole window looks washed out. This class of bug is
   invisible in the source and obvious in a screenshot — most of the visual work

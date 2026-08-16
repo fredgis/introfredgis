@@ -13,5 +13,7 @@ ld -mi386pep --subsystem windows -e start -s -T tiny.ld -o fredgis.exe `
    fredgis.o "-L$lib" -lkernel32 -luser32 -lgdi32 -lwinmm
 if ($LASTEXITCODE) { throw 'ld failed' }
 
+& "$PSScriptRoot\pecompact.ps1" -Path "$PSScriptRoot\fredgis.exe"
+
 Remove-Item fredgis.o -ErrorAction SilentlyContinue
 "fredgis.exe  $((Get-Item fredgis.exe).Length) bytes"
