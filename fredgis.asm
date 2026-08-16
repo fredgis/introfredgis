@@ -5,8 +5,10 @@
 ;     dissolve into real transparency; that needs per-pixel alpha, so the demo
 ;     is a layered window fed by UpdateLayeredWindow from a 32 bpp DIB we own
 ;   - worn CRT look: every other line is darkened for the scanline feel
-;   - the torn ends of the planks smoulder: a sideways Doom fire pushes green
-;     blue embers outwards so the silhouette never looks rectangular
+;   - the torn ends of the planks smoulder: a sideways Doom fire pushes grey
+;     ash and green blue embers outwards so the silhouette ends in flame
+;     instead of a straight edge
+;   - the whole window is slightly see-through, coverage tops out at GLOBAL_A
 ;   - the FREDGIS logo uses a hand made block font stored in this file, so no
 ;     system typeface is involved; letters are painted straight into the DIB
 ;   - MATRIX rain runs down the letters: drops light up the blocks they cross
@@ -48,8 +50,10 @@ default rel
 %define NPLANK              6            ; NPLANK * PLANK_H must equal SCR_H
 %define PLANK_H             45
 %define PLANK_CORE          118          ; opaque width sacrificed at each end
-%define FIRE_W              48           ; how far a flame can reach past the tip
-%define FLAME_IN            10           ; how deep inside the plank it starts
+%define GLOBAL_A            226          ; nothing is fully solid: the desktop
+                                         ; stays faintly visible through it all
+%define FIRE_W              96           ; how far a flame can reach past the tip
+%define FLAME_IN            42           ; how deep inside the plank it starts
 %define SCANLINE            205          ; colour scale of every odd row
 
 %define STARS               200
@@ -119,11 +123,9 @@ glyph_data:
 level_col     dd 0x00D8FFE8, 0x0044FF88, 0x0022E068, 0x001AC055
               dd 0x0012A044, 0x000C8034
 
-scroll_text   db "*** FREDGIS PRESENTS ***     DATA IS THE CENTER OF "
-              db "EVERYTHING ***     NO DATA, NO INTELLIGENCE - ARTIFICIAL "
-              db "OR NOT ***     MODELS COME AND GO, THE DATA REMAINS ***     "
-              db "GARBAGE IN, GARBAGE OUT STILL RULES ***     ESC TO RETURN, "
-              db "DRAG TO MOVE ***     ", 0
+scroll_text   db "*** CONVICTION, CREATIVITY & DATA - THE FUEL OF THE MODERN "
+              db "ARCHITECT ***     NO DATA, NO INTELLIGENCE ***     "
+              db "ESC TO RETURN, DRAG TO MOVE ***     ", 0
 scroll_len    equ $ - scroll_text - 1
 
 ulw_size      dd SCR_W, SCR_H             ; constant arguments of the blit
@@ -384,20 +386,30 @@ MakeMask:
 .plank:
     call NextRand
     and eax, 15
-    imul eax, eax, 7                    ; 0..105
-    mov r14d, eax                       ; where this plank stops on the left
+    imul eax, eax, 7                    ; 12..117: the planks must end at very
+    add eax, 12                         ; different depths or the silhouette
+    mov r14d, eax                       ; reads as a plain rectangle again
     mov ecx, PLANK_CORE
     sub ecx, eax
-    mov dword [rsp + 32], ecx           ; left fade, 13..118
+    cmp ecx, 40                         ; a long tip would leave no room for
+    jge .fade_l                         ; the ramp, so give it a floor
+    mov ecx, 40
+.fade_l:
+    mov dword [rsp + 32], ecx           ; left fade width
 
     call NextRand
     and eax, 15
     imul eax, eax, 7
+    add eax, 12
     mov r15d, SCR_W
     sub r15d, eax                       ; where it stops on the right
     mov ecx, PLANK_CORE
     sub ecx, eax
-    mov dword [rsp + 36], ecx           ; right fade
+    cmp ecx, 40
+    jge .fade_r
+    mov ecx, 40
+.fade_r:
+    mov dword [rsp + 36], ecx           ; right fade width
 
     mov eax, r12d
     imul eax, eax, PLANK_H * SCR_W
@@ -427,12 +439,16 @@ MakeMask:
     jle .clear
     cmp eax, dword [rsp + 32]
     jge .left_full
-    imul eax, eax, 255
+    shl eax, 8                          ; t = d/fade in 0..256
     cdq
     idiv dword [rsp + 32]
+    imul eax, eax                       ; square it: the ramp stays low across
+    shr eax, 8                          ; most of the tip so the ragged fire,
+    imul eax, GLOBAL_A                  ; not a straight gradient, draws the
+    shr eax, 8                          ; silhouette there
     jmp .have_left
 .left_full:
-    mov eax, 255
+    mov eax, GLOBAL_A
 .have_left:
     mov r8d, eax
     mov eax, r15d                       ; ramp up from the right tip
@@ -442,9 +458,13 @@ MakeMask:
     jle .clear
     cmp eax, dword [rsp + 36]
     jge .take_left
-    imul eax, eax, 255
+    shl eax, 8
     cdq
     idiv dword [rsp + 36]
+    imul eax, eax
+    shr eax, 8
+    imul eax, GLOBAL_A
+    shr eax, 8
     cmp eax, r8d                        ; keep whichever end is dimmer
     jle .store
 .take_left:
@@ -580,13 +600,15 @@ BurnEdges:
     add r15d, 12345
     mov eax, r15d
     shr eax, 17
-    and eax, 63
-    sub eax, 30                         ; random walk, slightly upward biased
+    and eax, 127
+    sub eax, 63                         ; near unbiased walk: without this the
+                                        ; rows all pin to 255 and the fire turns
+                                        ; into a flat band instead of tongues
     movzx edx, byte [r10 + r12]
     add edx, eax
-    cmp edx, 150                        ; keep it dim: these are embers
+    cmp edx, 255                        ; let the tongues reach full heat
     jle .heat_low
-    mov edx, 150
+    mov edx, 255
 .heat_low:
     test edx, edx
     jns .heat_ok
@@ -596,6 +618,32 @@ BurnEdges:
     inc r12d
     cmp r12d, SCR_H
     jb .heat
+
+    ; Smooth the heat along y. Each row walks on its own, so without this the
+    ; fire is fine static; diffusing a little every frame builds the vertical
+    ; correlation that turns it into tongues of different lengths.
+    mov r9d, 2
+.smooth_pass:
+    movzx r8d, byte [r10]               ; previous row, clamped at the top
+    xor r12d, r12d
+.smooth:
+    movzx eax, byte [r10 + r12]
+    lea edx, [r12 + 1]
+    cmp edx, SCR_H
+    jb .sm_next
+    mov edx, r12d
+.sm_next:
+    movzx edx, byte [r10 + rdx]
+    add edx, r8d
+    lea edx, [rdx + rax * 2]
+    shr edx, 2
+    mov r8d, eax                        ; the neighbour must stay unsmoothed
+    mov byte [r10 + r12], dl
+    inc r12d
+    cmp r12d, SCR_H
+    jb .smooth
+    dec r9d
+    jnz .smooth_pass
 
     xor r12d, r12d
 .row:
@@ -622,7 +670,7 @@ BurnEdges:
     add edx, ecx
     movzx r8d, byte [r14 + rdx - 1]     ; heat of the column one step in
     shr eax, 6
-    and eax, 15
+    and eax, 7                          ; slow cooling, so the tongues carry far
     sub r8d, eax
     jns .cool_ok
     xor r8d, r8d
@@ -711,14 +759,15 @@ AlphaPass:
     jbe .flame_paint
     mov r10d, eax
 .flame_paint:
-    mov edx, eax                        ; R = f/16, G = 3f/4, B = f/2
-    shr edx, 4
+    mov edx, 255                        ; the cold tail reads as ash: R ~ G ~ B
+    sub edx, eax                        ; so the tips end in grey black smoke
+    imul edx, eax                       ; that melts into the green blue core
+    shr edx, 8
     shl edx, 16
-    mov r8d, eax
-    shr r8d, 1
-    or edx, r8d
-    lea r8d, [rax + rax * 2]
+    lea r8d, [rax + rax * 2]            ; B = 3f/4
     shr r8d, 2
+    or edx, r8d
+    mov r8d, eax                        ; G = f
     shl r8d, 8
     or edx, r8d
     movd xmm0, dword [r14 + rcx * 4]    ; saturating add over all channels
