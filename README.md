@@ -459,8 +459,8 @@ NoteIncr:
     ret
 ```
 
-The song is 20 bytes: four chords, `Am F C G`, two seconds each, four arpeggio
-notes per chord.
+The song is 24 bytes: four chords, `Am F C G`, two seconds each, four arpeggio
+notes per chord, then a per-part octave offset.
 
 ```nasm
 arp_tab       db 0x39, 0x40, 0x44, 0x49
@@ -468,7 +468,16 @@ arp_tab       db 0x39, 0x40, 0x44, 0x49
               db 0x30, 0x34, 0x37, 0x40
               db 0x37, 0x3B, 0x42, 0x47
 bass_tab      db 0x19, 0x15, 0x10, 0x17
+
+part_lead     db 0, -16
+part_bass     db 0, -16
 ```
+
+Those last four bytes are the whole structure: the first eight seconds play it
+straight, the second eight drop an octave and walk the arpeggio backwards, then
+it loops. Nothing goes *up* — at 8 kHz the Nyquist limit is 4 kHz, and an
+octave above this lead put the pulse harmonics on the wrong side of it, which
+sounds like noise rather than a lead break.
 
 The one thing that separates a tracker from an organ is the envelope. Every
 note decays linearly across its own row, so each one has an attack:
@@ -483,8 +492,9 @@ note decays linearly across its own row, so each one has an attack:
 .env_ok:
 ```
 
-A spectrogram of the rendered buffer shows the progression falling out of it —
-the bass stepping 220 → 175 → 131 → 196 Hz, the arpeggio above it, and the
+A spectrogram of the rendered buffer shows the whole structure falling out of
+it — the bass stepping 220 → 175 → 131 → 196 Hz for eight seconds, the same
+progression an octave down for the next eight, the arpeggio above it, and the
 vertical striations of one pluck every 125 ms:
 
 ![tune](docs/tune.png)
