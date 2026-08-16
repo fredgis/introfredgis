@@ -49,11 +49,21 @@ default rel
 
 %define NPLANK              6            ; NPLANK * PLANK_H must equal SCR_H
 %define PLANK_H             45
-%define PLANK_CORE          118          ; opaque width sacrificed at each end
-%define GLOBAL_A            226          ; nothing is fully solid: the desktop
-                                         ; stays faintly visible through it all
-%define FIRE_W              96           ; how far a flame can reach past the tip
-%define FLAME_IN            42           ; how deep inside the plank it starts
+%define PLANK_FADE          64           ; power of two: the ramp divide is a
+                                         ; shift instead of an idiv
+%define TIP_MAX             70           ; deepest a plank end can be eaten
+%define PLANK_CORE          (TIP_MAX + PLANK_FADE)
+%define GLOBAL_A            196          ; nothing is fully solid: the desktop
+                                         ; stays clearly visible through it all
+%define FIRE_W              176          ; how far a flame can reach past the tip
+%define FLAME_IN            72           ; the source sits inside the solid core,
+                                         ; so the fire covers the whole ramp and
+                                         ; there is no bare gradient to see
+%define FLAME_RISE          64           ; power of two. The fire is faded in
+%define FLAME_RISE_LOG      6            ; over this many pixels: at full heat
+                                         ; from the first column it would draw a
+                                         ; straight black to green seam right
+                                         ; where the source sits
 %define SCANLINE            205          ; colour scale of every odd row
 
 %define STARS               200
@@ -123,9 +133,8 @@ glyph_data:
 level_col     dd 0x00D8FFE8, 0x0044FF88, 0x0022E068, 0x001AC055
               dd 0x0012A044, 0x000C8034
 
-scroll_text   db "*** CONVICTION, CREATIVITY & DATA - THE FUEL OF THE MODERN "
-              db "ARCHITECT ***     NO DATA, NO INTELLIGENCE ***     "
-              db "ESC TO RETURN, DRAG TO MOVE ***     ", 0
+scroll_text   db "CONVICTION, CREATIVITY & DATA: THE FUEL OF THE MODERN "
+              db "ARCHITECT          ", 0
 scroll_len    equ $ - scroll_text - 1
 
 ulw_size      dd SCR_W, SCR_H             ; constant arguments of the blit
@@ -370,7 +379,7 @@ InitField:
 ; gets a short one, which keeps the opaque core exactly PLANK_CORE pixels wide
 ; on both sides while the visible tips land all over the place.
 ;
-; Frame: rsp+32 left fade width, rsp+36 right fade width
+; Frame: rsp+32..63 scratch, only there as shadow space for the calls
 ; ----------------------------------------------------------------------------
 MakeMask:
     push rbp
@@ -386,30 +395,16 @@ MakeMask:
 .plank:
     call NextRand
     and eax, 15
-    imul eax, eax, 7                    ; 12..117: the planks must end at very
-    add eax, 12                         ; different depths or the silhouette
-    mov r14d, eax                       ; reads as a plain rectangle again
-    mov ecx, PLANK_CORE
-    sub ecx, eax
-    cmp ecx, 40                         ; a long tip would leave no room for
-    jge .fade_l                         ; the ramp, so give it a floor
-    mov ecx, 40
-.fade_l:
-    mov dword [rsp + 32], ecx           ; left fade width
+    imul eax, eax, 4                    ; 10..TIP_MAX: the planks must end at
+    add eax, 10                         ; clearly different depths or the
+    mov r14d, eax                       ; silhouette reads as a rectangle
 
     call NextRand
     and eax, 15
-    imul eax, eax, 7
-    add eax, 12
+    imul eax, eax, 4
+    add eax, 10
     mov r15d, SCR_W
     sub r15d, eax                       ; where it stops on the right
-    mov ecx, PLANK_CORE
-    sub ecx, eax
-    cmp ecx, 40
-    jge .fade_r
-    mov ecx, 40
-.fade_r:
-    mov dword [rsp + 36], ecx           ; right fade width
 
     mov eax, r12d
     imul eax, eax, PLANK_H * SCR_W
@@ -437,15 +432,10 @@ MakeMask:
     sub eax, r14d
     test eax, eax
     jle .clear
-    cmp eax, dword [rsp + 32]
+    cmp eax, PLANK_FADE
     jge .left_full
-    shl eax, 8                          ; t = d/fade in 0..256
-    cdq
-    idiv dword [rsp + 32]
-    imul eax, eax                       ; square it: the ramp stays low across
-    shr eax, 8                          ; most of the tip so the ragged fire,
-    imul eax, GLOBAL_A                  ; not a straight gradient, draws the
-    shr eax, 8                          ; silhouette there
+    shl eax, 2                          ; t = d/PLANK_FADE in 0..256, a shift
+    call SmoothStep                     ; because the width is a power of two
     jmp .have_left
 .left_full:
     mov eax, GLOBAL_A
@@ -456,15 +446,10 @@ MakeMask:
     sub eax, ecx
     test eax, eax
     jle .clear
-    cmp eax, dword [rsp + 36]
+    cmp eax, PLANK_FADE
     jge .take_left
-    shl eax, 8
-    cdq
-    idiv dword [rsp + 36]
-    imul eax, eax
-    shr eax, 8
-    imul eax, GLOBAL_A
-    shr eax, 8
+    shl eax, 2
+    call SmoothStep
     cmp eax, r8d                        ; keep whichever end is dimmer
     jle .store
 .take_left:
@@ -494,6 +479,28 @@ MakeMask:
     pop r13
     pop r12
     pop rbp
+    ret
+
+; ----------------------------------------------------------------------------
+; Smoothstep, 3t^2 - 2t^3, in fixed point.
+;
+; eax = t in 0..256, returns the curve scaled to 0..GLOBAL_A. A linear ramp is
+; mathematically smooth but reads as a straight edge, and a plain square is
+; worse: its slope is steepest where it meets the solid core, which is exactly
+; the hard line we are trying to get rid of. Smoothstep is flat at both ends,
+; so the plank melts into the fire with no visible seam. Only called while the
+; mask is built, so the call in the inner loop costs nothing at runtime.
+; ----------------------------------------------------------------------------
+SmoothStep:
+    mov edx, eax
+    imul eax, eax
+    shr eax, 8                          ; s = t^2 / 256
+    imul edx, eax                       ; s * t
+    shr edx, 7                          ; 2 * s * t / 256
+    lea eax, [rax + rax * 2]            ; 3s
+    sub eax, edx
+    imul eax, GLOBAL_A
+    shr eax, 8
     ret
 
 ; ----------------------------------------------------------------------------
@@ -670,7 +677,9 @@ BurnEdges:
     add edx, ecx
     movzx r8d, byte [r14 + rdx - 1]     ; heat of the column one step in
     shr eax, 6
-    and eax, 7                          ; slow cooling, so the tongues carry far
+    and eax, 3                          ; the source now starts deep inside the
+                                        ; plank, so cooling has to be gentle
+                                        ; enough to still reach past the tip
     sub r8d, eax
     jns .cool_ok
     xor r8d, r8d
@@ -748,11 +757,24 @@ AlphaPass:
     sub eax, edi
     cmp eax, FIRE_W
     jae .no_flame
+    mov edx, eax
     movzx eax, byte [r15 + rax]
     jmp .have_flame
 .flame_left:
+    mov edx, eax
     movzx eax, byte [rbx + rax]
 .have_flame:
+    cmp edx, FLAME_RISE                 ; fade the fire in as it comes out of
+    jae .flame_lit                      ; the plank, so the body grades from
+    imul eax, edx                       ; black to ash to ember instead of
+    shr eax, FLAME_RISE_LOG             ; meeting the flames on a straight line
+.flame_lit:
+    lea eax, [rax + rax * 2]            ; +50%: the fade in costs brightness and
+    shr eax, 1                          ; the embers have to read as fire
+    cmp eax, 255
+    jbe .flame_ok
+    mov eax, 255
+.flame_ok:
     test eax, eax
     jz .no_flame
     cmp eax, r10d                       ; embers glow a little past the tear

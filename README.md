@@ -1,8 +1,8 @@
 # FREDGIS
 
 A 1990s style cracktro for Windows x64, written in **pure NASM assembly**.
-No C, no CRT, no framework, no external asset: **6 144 bytes** on disk, three
-system DLLs, one source file.
+No C, no runtime library, no framework, no external asset: **6 144 bytes** on
+disk, three system DLLs, one source file.
 
 ![FREDGIS](docs/fredgis.gif)
 
@@ -19,7 +19,7 @@ hand into a memory bitmap.
 | File | Purpose |
 | --- | --- |
 | `fredgis.asm` | The whole demo. ~1 300 lines of NASM, 23 imported symbols. |
-| `tiny.ld` | Custom linker script that strips the sections mingw emits for a C runtime we do not have. |
+| `tiny.ld` | Custom linker script that discards every section the linker emits by default and that this program has no use for. |
 | `build.ps1` | One command build. |
 | `docs/` | Screenshots and the animated capture. |
 
@@ -41,9 +41,9 @@ ld -mi386pep --subsystem windows -e start -s -T tiny.ld -o fredgis.exe `
    fredgis.o "-L$lib" -lkernel32 -luser32 -lgdi32
 ```
 
-`ld` is used only as a PE writer and import table generator. Nothing from
-libgcc, libmsvcrt or the mingw startup files is linked in: `start` is the raw
-entry point and the process ends with `ExitProcess`.
+`ld` is used only as a PE writer and import table generator. No startup object
+and no support library is linked in: `start` is the raw entry point the loader
+jumps to, and the process ends with `ExitProcess`.
 
 ## Run
 
@@ -58,6 +58,65 @@ Every launch is different: the plank silhouette, the starfield and the fire are
 all seeded from `GetTickCount`.
 
 ![screenshot](docs/demo.png)
+
+---
+
+# Architecture
+
+```mermaid
+flowchart TB
+    subgraph BOOT["start — runs once"]
+        direction TB
+        B1["BuildLogo<br/>8×8 block font → colbits"]
+        B2["MakeMask + SmoothStep<br/>plank silhouette → mask, tip_l, tip_r"]
+        B3["InitField<br/>seed 200 stars from GetTickCount"]
+        B4["CreateDIBSection<br/>negative height → top-down BGRA"]
+        B1 --> B2 --> B3 --> B4
+    end
+
+    subgraph FRAME["DemoMain — every frame"]
+        direction TB
+        F1["inline rep stosq<br/>clear the DIB"]
+        F2["TextOutA<br/>scroller, GDI draws RGB only"]
+        F3["GdiFlush<br/>GDI batches: must drain before we touch alpha"]
+        F4["DrawTrail ×200<br/>perspective starfield with trails"]
+        F5["logo + Matrix rain + glitch"]
+        F6["BurnEdges<br/>heat walk → y diffusion → outward decay"]
+        F7["AlphaPass<br/>mask ∪ fire → premultiplied BGRA + scanlines"]
+        F1 --> F2 --> F3 --> F4 --> F5 --> F6 --> F7
+    end
+
+    subgraph DATA["Tables in .bss"]
+        direction LR
+        D1["mask<br/>720×270 coverage"]
+        D2["tip_l / tip_r<br/>per-row plank ends"]
+        D3["fire / src_heat<br/>2 sides × 270 rows"]
+        D4["colbits<br/>logo bitmask"]
+        D5["stars_*<br/>x, y, z, prev"]
+    end
+
+    BOOT --> FRAME
+    FRAME -->|"UpdateLayeredWindow"| OUT["Desktop compositor"]
+    F7 -.reads.-> D1
+    F6 -.reads.-> D2
+    F6 -.writes.-> D3
+    F7 -.reads.-> D3
+    F5 -.reads.-> D4
+    F4 -.reads.-> D5
+    WP["WndProc<br/>WM_LBUTTONDOWN → drag<br/>ESC → ExitProcess"] --> FRAME
+
+    classDef boot fill:#0b2b1f,stroke:#3ddc97,stroke-width:2px,color:#d8ffe9
+    classDef frame fill:#0a1f2b,stroke:#4bc8ff,stroke-width:2px,color:#dbf3ff
+    classDef data fill:#2b220a,stroke:#e8c34a,stroke-width:2px,color:#fff3d0
+    classDef out fill:#2b0a1a,stroke:#ff6ba6,stroke-width:2px,color:#ffd9e7
+    class B1,B2,B3,B4 boot
+    class F1,F2,F3,F4,F5,F6,F7,WP frame
+    class D1,D2,D3,D4,D5 data
+    class OUT out
+```
+
+There is no engine and no abstraction layer: one source file, one 16 ms loop,
+and three tables of bytes that every effect reads from or writes to.
 
 ---
 
@@ -132,59 +191,75 @@ otherwise stomp on pixels we already composited.
 ```
 
 Nothing in the demo ever reaches alpha 255. The coverage tops out at
-`GLOBAL_A = 226`, which is what makes the whole window slightly transparent:
+`GLOBAL_A = 196`, which is what makes the whole window see-through:
 
 ```nasm
-%define GLOBAL_A            226          ; nothing is fully solid: the desktop
-                                         ; stays faintly visible through it all
+%define GLOBAL_A            196          ; nothing is fully solid: the desktop
+                                         ; stays clearly visible through it all
 ```
 
 ## 3. `MakeMask` — the plank silhouette
 
 Six planks of 45 rows. Each one picks how deep it tears on the left and on the
-right, independently, so no two ends line up. The fade width is floored,
-because a very long tip would otherwise leave no room for a gradient at all:
+right, independently, so no two ends line up:
 
 ```nasm
     call NextRand
     and eax, 15
-    imul eax, eax, 7                    ; 12..117: the planks must end at very
-    add eax, 12                         ; different depths or the silhouette
-    mov r14d, eax                       ; reads as a plain rectangle again
-    mov ecx, PLANK_CORE
-    sub ecx, eax
-    cmp ecx, 40                         ; a long tip would leave no room for
-    jge .fade_l                         ; the ramp, so give it a floor
-    mov ecx, 40
-.fade_l:
-    mov dword [rsp + 32], ecx           ; left fade width
+    imul eax, eax, 4                    ; 10..TIP_MAX: the planks must end at
+    add eax, 10                         ; clearly different depths or the
+    mov r14d, eax                       ; silhouette reads as a rectangle
 ```
 
-The ramp itself is **squared**. A linear ramp gives a mathematically smooth but
-visually straight edge — you still read a rectangle. Squaring it keeps the
-alpha low across most of the tip, so the ragged fire, not the gradient, is what
-your eye follows:
+The fade width is the constant `PLANK_FADE = 64`. Making it a power of two
+turns the `t = d / fade` division into a single shift, which is the difference
+between a `cdq` + `idiv` pair and one instruction:
 
 ```nasm
-    shl eax, 8                          ; t = d/fade in 0..256
-    cdq
-    idiv dword [rsp + 32]
-    imul eax, eax                       ; square it: the ramp stays low across
-    shr eax, 8                          ; most of the tip so the ragged fire,
-    imul eax, GLOBAL_A                  ; not a straight gradient, draws the
-    shr eax, 8                          ; silhouette there
+    cmp eax, PLANK_FADE
+    jge .left_full
+    shl eax, 2                          ; t = d/PLANK_FADE in 0..256, a shift
+    call SmoothStep                     ; because the width is a power of two
 ```
+
+The curve is **smoothstep**, `3t² − 2t³`, in fixed point. This was the third
+attempt. A linear ramp is mathematically smooth but reads as a straight edge.
+A plain square is *worse*: its slope is steepest exactly where it meets the
+solid core, which is the hard line we were trying to remove in the first place.
+Smoothstep is flat at both ends, so the plank melts into the fire with no seam:
+
+```nasm
+SmoothStep:
+    mov edx, eax
+    imul eax, eax
+    shr eax, 8                          ; s = t^2 / 256
+    imul edx, eax                       ; s * t
+    shr edx, 7                          ; 2 * s * t / 256
+    lea eax, [rax + rax * 2]            ; 3s
+    sub eax, edx
+    imul eax, GLOBAL_A
+    shr eax, 8
+    ret
+```
+
+It runs once, at startup, so the `call` sitting in the inner loop costs nothing
+at runtime.
 
 ## 4. `BurnEdges` — the fire
 
 A Doom style fire rotated 90°, anchored to each plank's own tip rather than to
-a fixed column, propagating outwards. The inner loop runs 2 × 270 × 96 times
-per frame, so the RNG is inlined rather than called:
+a fixed column, propagating outwards over `FIRE_W = 176` pixels. The inner loop
+runs 2 × 270 × 176 times per frame, so the RNG is inlined rather than called:
 
 ```nasm
     imul r15d, r15d, 1103515245         ; inline LCG, no call in these loops
     add r15d, 12345
 ```
+
+The source is not on the tip itself. It sits `FLAME_IN = 72` pixels *inside*
+the solid core, which is more than the 64 pixel alpha ramp. Putting it on the
+tip leaves the whole fade region with no fire in it — a bare gradient, and your
+eye reads a bare gradient as a straight edge.
 
 Each row has its own heat that random-walks every frame. The bias matters more
 than it looks:
@@ -221,15 +296,37 @@ correlation that turns static into tongues of different lengths:
 ```
 
 Propagation outwards cools each step by a random amount. The mask is small
-(`0..7`) so a hot tongue carries most of the 96 pixel width before dying:
+(`0..3`, so 1.5 per step on average) and it is tuned: a 255 source dies after
+roughly 170 steps, just short of the 176 pixel band, so the fire fades out on
+its own instead of being cut off at the boundary:
 
 ```nasm
     movzx r8d, byte [r14 + rdx - 1]     ; heat of the column one step in
     shr eax, 6
-    and eax, 7                          ; slow cooling, so the tongues carry far
+    and eax, 3                          ; gentle cooling: the tongues reach far
     sub r8d, eax
     jns .cool_ok
     xor r8d, r8d
+```
+
+The last piece, and the one that finally killed the hard edges, is that the
+fire is **faded in** over its first 64 columns. Starting at full source heat on
+column 0 draws a perfectly straight vertical line — a hard black to green seam
+exactly where the plank body ends. Ramping the heat up instead makes the body
+grade black → ash → ember with nothing straight anywhere:
+
+```nasm
+    cmp edx, FLAME_RISE                 ; fade the fire in as it comes out of
+    jae .flame_lit                      ; the plank, so the body grades from
+    imul eax, edx                       ; black to ash to ember instead of
+    shr eax, FLAME_RISE_LOG             ; meeting the flames on a straight line
+.flame_lit:
+    lea eax, [rax + rax * 2]            ; +50%: the fade in costs brightness and
+    shr eax, 1                          ; the embers have to read as fire
+    cmp eax, 255
+    jbe .flame_ok
+    mov eax, 255
+.flame_ok:
 ```
 
 ![burning edges](docs/edges.png)
@@ -354,6 +451,7 @@ second run.
 | `start` | Entry point, seeds the RNG, calls `DemoMain`, `ExitProcess`. |
 | `NextRand` | 32-bit xorshift. Everything random comes from here. |
 | `MakeMask` | Per-row alpha mask of the planks; records each tip so the fire knows where to burn. |
+| `SmoothStep` | `3t² − 2t³` in fixed point, the curve that melts the plank ends into the fire. |
 | `BuildLogo` / `DrawBlock` | Block font rasteriser, Matrix rain and glitch blocks. |
 | `InitField` / `ResetStar` / `ProjectStar` / `SyncTrail` | Starfield simulation and perspective projection. |
 | `DrawTrail` | DDA line plotter, replaces `MoveToEx` / `LineTo`. |
@@ -374,7 +472,7 @@ alignment, so the real currency is *sections*, not instructions:
 
 ```
 headers   0x400
-.text     0xff0  →  0x1000        (4080 of 4096 used)
+.text     0xfb0  →  0x1000        (4016 of 4096 used)
 .idata    0x3f4  →  0x0400        (1012 of 1024 used)
                     ------
                     0x1800  =  6144
@@ -385,7 +483,7 @@ adding one import or one more line of scroll text costs 512 bytes of file.
 
 What worked:
 
-* **`tiny.ld`.** The default mingw script emits `.rdata` constructor markers,
+* **`tiny.ld`.** The linker's built in script emits constructor marker sections,
   `.edata`, `.tls`, `.didat` and pseudo-reloc sections that a freestanding
   program has no use for. Discarding them dropped 7 168 → 6 656 bytes.
 * **Fewer imports.** 28 symbols down to 23. `BitBlt` became an inline qword
