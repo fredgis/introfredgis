@@ -1,8 +1,8 @@
 <h1 align="center">FREDGIS</h1>
 
 <p align="center">
-  <b>A 1990s cracktro for Windows x64, in 5 632 bytes of pure NASM assembly.</b><br>
-  <sub>no C · no runtime library · no framework · no external asset · one source file</sub>
+  <b>A 1990s cracktro for Windows x64, in pure NASM assembly.</b><br>
+  <sub>no C · no runtime library · no framework · no external asset</sub>
 </p>
 
 <p align="center">
@@ -10,15 +10,51 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/fredgis/introfredgis/releases/latest/download/fredgis.exe"><b>⬇ Download fredgis.exe</b> (5 632 bytes)</a> ·
-  <a href="docs/fredgis.mp4">video with sound</a> ·
-  <a href="docs/tune.wav">soundtrack only</a> ·
-  <a href="#size">how it fits in 5 632 bytes</a>
+  <a href="https://github.com/fredgis/introfredgis/releases/latest/download/fredgis.exe"><b>⬇ fredgis.exe</b> — 5 632 bytes, everything</a><br>
+  <a href="https://github.com/fredgis/introfredgis/releases/latest/download/fredgis4k.exe"><b>⬇ fredgis4k.exe</b> — 4 096 bytes, no sound, no scroller</a>
 </p>
 
 <p align="center">
-  <img src="docs/bytes.png" alt="byte budget" width="880">
+  <a href="docs/fredgis.mp4">video with sound</a> ·
+  <a href="docs/tune.wav">soundtrack only</a> ·
+  <a href="#size">how it fits</a>
 </p>
+
+---
+
+## Two builds, one source tree
+
+Both are the same demo. The 4 096 byte one exists because the file size is
+quantised in 512 byte blocks, so shrinking the code changes nothing until a
+whole block comes free — the only way down was to give up features.
+
+| | `fredgis.asm` | `fredgis4k.asm` |
+| --- | :---: | :---: |
+| **size** | **5 632 bytes** | **4 096 bytes** |
+| imported symbols | 21, four DLLs | 9, three DLLs |
+| burning plank window, layered alpha | ✅ | ✅ |
+| block logo, Matrix rain, glitch | ✅ | ✅ |
+| perspective starfield with trails | ✅ | ✅ |
+| 16 s chiptune | ✅ | ❌ |
+| scrolling message | ✅ | ❌ |
+| drag the window | ✅ | ❌ |
+
+<p align="center">
+  <img src="docs/bytes.png" alt="byte budget, full build" width="820">
+</p>
+
+<p align="center">
+  <img src="docs/bytes4k.png" alt="byte budget, 4096 build" width="820">
+</p>
+
+The 4 096 build is not a different program: it is the same file with
+`StartMusic` removed, the GDI text gone, and the window created from the
+predefined `STATIC` class so there is no `WNDCLASS` and no window procedure —
+the frame is drawn straight from the message loop when `WM_TIMER` arrives.
+That last change alone removes `RegisterClassA`, `DefWindowProcA` and
+`DispatchMessageA`, and it is what finally drags `.idata` under 512 bytes.
+
+![the 4096 byte build](docs/demo4k.png)
 
 ---
 
@@ -34,11 +70,13 @@ bitmap, and the music is synthesised sample by sample into a byte array.
 
 | File | Purpose |
 | --- | --- |
-| `fredgis.asm` | The whole demo. ~1 450 lines of NASM, 21 imported symbols. |
+| `fredgis.asm` | The full demo. ~1 450 lines of NASM, 21 imported symbols. |
+| `fredgis4k.asm` | The same demo stripped to fit 4 096 bytes. |
 | `tiny.ld` | Custom linker script that discards every section the linker emits by default and that this program has no use for. |
 | `pecompact.ps1` | Post link step that shrinks the padded PE header block from 512 to 0 wasted bytes. |
-| `build.ps1` | One command build. |
-| `docs/` | Screenshots, the animated capture and the soundtrack. |
+| `build.ps1` | One command, builds both. |
+| `docs/` | Screenshots, the animated capture, the soundtrack, and the script that draws the byte budgets. |
+
 
 ## Build
 
@@ -47,6 +85,11 @@ toolchain, both on `PATH`.
 
 ```powershell
 .\build.ps1
+```
+
+```
+fredgis.exe      5632 bytes
+fredgis4k.exe    4096 bytes
 ```
 
 Or by hand:
@@ -65,15 +108,16 @@ jumps to, and the process ends with `ExitProcess`.
 
 ## Run
 
-Grab the binary from the
-[latest release](https://github.com/fredgis/introfredgis/releases/latest/download/fredgis.exe),
-or build it yourself with the two commands above.
+Grab either binary from the
+[latest release](https://github.com/fredgis/introfredgis/releases/latest),
+or build them yourself with the command above.
 
 ```powershell
-.\fredgis.exe
+.\fredgis.exe        # everything
+.\fredgis4k.exe      # 4096 bytes, no sound and no scroller
 ```
 
-* **Drag anywhere** to move the window — there is no title bar.
+* **Drag anywhere** to move the window — there is no title bar. *(full build only)*
 * **Escape** to quit.
 
 Every launch is different: the plank silhouette, the starfield and the fire are
@@ -638,16 +682,29 @@ linkers emit 0x200 to begin with.
 
 ## Where it stops
 
-`.text` holds 4 064 bytes in a 4 096 block and `.idata` 988 in a 1 024 block.
+`.text` holds 4 048 bytes in a 4 096 block and `.idata` 988 in a 1 024 block.
 Because the file is quantised in 512 byte steps, **shaving another twenty or
-fifty bytes changes nothing at all** — the next gain needs a whole block:
+fifty bytes changes nothing at all** — the next gain needs a whole block.
 
-* `.text` under 3 584 — 480 more bytes, roughly the size of the entire music
-  routine or the whole starfield.
-* `.idata` under 512 — fifteen of the twenty one imports would have to go.
+That is exactly what `fredgis4k.asm` proves, in both directions. The cheap
+tricks do not get you there:
 
-Removing the high octave from the tune, for instance, takes `.text` from 4 080
-to 4 064 and the file stays at 5 632 bytes, to the byte.
+| | result |
+| --- | --- |
+| shorten the scroll text to nothing | −55 bytes, **file unchanged** |
+| drop the high octave from the tune | −16 bytes, **file unchanged** |
+| apply every peephole idiom left | under 100 bytes, **file unchanged** |
+| drop music + scroller + drag + window class | −992 in `.text`, −520 in `.idata`, **file 5 632 → 4 096** |
+
+The measured floor for `.idata` is the interesting part. Eleven imports — the
+smallest set that still creates a layered window and blits it — assembles to
+**584 bytes**, which still rounds up to a 1 024 block. It only drops to **468**,
+and therefore into a 512 block, once the predefined `STATIC` class removes
+`RegisterClassA` and `DefWindowProcA`, and drawing from the message loop
+removes `DispatchMessageA`.
+
+So the question was never "how many characters do I cut" but "which effect do
+I give up". Both answers now live in the repo.
 
 Working through chapter 10 of Agner Fog's
 [*Optimizing subroutines in assembly language*](https://www.agner.org/optimize/optimizing_assembly.pdf)
@@ -676,9 +733,6 @@ with pointers take one byte less when they have only a base pointer and a
 displacement than when they have a scaled index register"* — that is the
 interleaved record change — and *"64-bit code does not need more bytes for
 addresses than 32-bit code because it can use 32-bit RIP-relative addresses"*.
-
-So 5 632 is the floor for this feature set, and everything below it costs an
-effect.
 
 ## What did not work, and is worth knowing
 
