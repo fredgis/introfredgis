@@ -10,7 +10,7 @@ nasm -Ox -f win64 fredgis.asm -o fredgis.o
 if ($LASTEXITCODE) { throw 'nasm failed' }
 
 ld -mi386pep --subsystem windows -e start -s -T tiny.ld -o fredgis.exe `
-   fredgis.o "-L$lib" -lkernel32 -luser32 -lgdi32
+   fredgis.o "-L$lib" -lkernel32 -luser32 -lgdi32 -lwinmm
 if ($LASTEXITCODE) { throw 'ld failed' }
 
 Remove-Item fredgis.o -ErrorAction SilentlyContinue

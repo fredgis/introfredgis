@@ -1,16 +1,21 @@
 # FREDGIS
 
 A 1990s style cracktro for Windows x64, written in **pure NASM assembly**.
-No C, no runtime library, no framework, no external asset: **6 144 bytes** on
-disk, three system DLLs, one source file.
+No C, no runtime library, no framework, no external asset: **7 168 bytes** on
+disk, four system DLLs, one source file — graphics *and* a chiptune.
 
-![FREDGIS](docs/fredgis.gif)
+<p align="center">
+  <img src="docs/fredgis.gif" alt="FREDGIS" width="620">
+</p>
 
 The window is not a rectangle. It is a stack of horizontal planks whose torn
 ends burn away into grey ash and green blue embers, and the whole thing is
-slightly see-through, so the desktop stays faintly visible behind it. Every
-pixel — the letters, the fire, the stars, the transparency — is rasterised by
-hand into a memory bitmap.
+see-through, so the desktop stays visible behind it. Every pixel — the letters,
+the fire, the stars, the transparency — is rasterised by hand into a memory
+bitmap, and the music is synthesised sample by sample into a byte array.
+
+Sound only: [`docs/tune.wav`](docs/tune.wav) · with picture:
+[`docs/fredgis.mp4`](docs/fredgis.mp4)
 
 ---
 
@@ -18,10 +23,10 @@ hand into a memory bitmap.
 
 | File | Purpose |
 | --- | --- |
-| `fredgis.asm` | The whole demo. ~1 300 lines of NASM, 23 imported symbols. |
+| `fredgis.asm` | The whole demo. ~1 450 lines of NASM, 26 imported symbols. |
 | `tiny.ld` | Custom linker script that discards every section the linker emits by default and that this program has no use for. |
 | `build.ps1` | One command build. |
-| `docs/` | Screenshots and the animated capture. |
+| `docs/` | Screenshots, the animated capture and the soundtrack. |
 
 ## Build
 
@@ -38,7 +43,7 @@ Or by hand:
 $lib = Join-Path (Split-Path (Split-Path (Get-Command ld).Source)) "x86_64-w64-mingw32\lib"
 nasm -Ox -f win64 fredgis.asm -o fredgis.o
 ld -mi386pep --subsystem windows -e start -s -T tiny.ld -o fredgis.exe `
-   fredgis.o "-L$lib" -lkernel32 -luser32 -lgdi32
+   fredgis.o "-L$lib" -lkernel32 -luser32 -lgdi32 -lwinmm
 ```
 
 `ld` is used only as a PE writer and import table generator. No startup object
@@ -64,55 +69,25 @@ all seeded from `GetTickCount`.
 # Architecture
 
 ```mermaid
-flowchart TB
-    subgraph BOOT["start — runs once"]
-        direction TB
-        B1["BuildLogo<br/>8×8 block font → colbits"]
-        B2["MakeMask + SmoothStep<br/>plank silhouette → mask, tip_l, tip_r"]
-        B3["InitField<br/>seed 200 stars from GetTickCount"]
-        B4["CreateDIBSection<br/>negative height → top-down BGRA"]
-        B1 --> B2 --> B3 --> B4
-    end
+flowchart LR
+    A["<b>start</b><br/>BuildLogo · MakeMask<br/>InitField · StartMusic<br/>CreateDIBSection"]
+    B["<b>DemoMain</b> — 20 ms tick<br/>clear → TextOutA → GdiFlush<br/>→ stars → logo+rain<br/>→ BurnEdges → AlphaPass"]
+    C["<b>.bss</b><br/>mask · tip_l/tip_r<br/>fire · colbits · stars · audio"]
+    D["UpdateLayeredWindow"]
+    E["waveOut<br/>hardware loop"]
 
-    subgraph FRAME["DemoMain — every frame"]
-        direction TB
-        F1["inline rep stosq<br/>clear the DIB"]
-        F2["TextOutA<br/>scroller, GDI draws RGB only"]
-        F3["GdiFlush<br/>GDI batches: must drain before we touch alpha"]
-        F4["DrawTrail ×200<br/>perspective starfield with trails"]
-        F5["logo + Matrix rain + glitch"]
-        F6["BurnEdges<br/>heat walk → y diffusion → outward decay"]
-        F7["AlphaPass<br/>mask ∪ fire → premultiplied BGRA + scanlines"]
-        F1 --> F2 --> F3 --> F4 --> F5 --> F6 --> F7
-    end
+    A --> B --> D
+    A --> E
+    B <--> C
 
-    subgraph DATA["Tables in .bss"]
-        direction LR
-        D1["mask<br/>720×270 coverage"]
-        D2["tip_l / tip_r<br/>per-row plank ends"]
-        D3["fire / src_heat<br/>2 sides × 270 rows"]
-        D4["colbits<br/>logo bitmask"]
-        D5["stars_*<br/>x, y, z, prev"]
-    end
-
-    BOOT --> FRAME
-    FRAME -->|"UpdateLayeredWindow"| OUT["Desktop compositor"]
-    F7 -.reads.-> D1
-    F6 -.reads.-> D2
-    F6 -.writes.-> D3
-    F7 -.reads.-> D3
-    F5 -.reads.-> D4
-    F4 -.reads.-> D5
-    WP["WndProc<br/>WM_LBUTTONDOWN → drag<br/>ESC → ExitProcess"] --> FRAME
-
-    classDef boot fill:#0b2b1f,stroke:#3ddc97,stroke-width:2px,color:#d8ffe9
-    classDef frame fill:#0a1f2b,stroke:#4bc8ff,stroke-width:2px,color:#dbf3ff
-    classDef data fill:#2b220a,stroke:#e8c34a,stroke-width:2px,color:#fff3d0
-    classDef out fill:#2b0a1a,stroke:#ff6ba6,stroke-width:2px,color:#ffd9e7
-    class B1,B2,B3,B4 boot
-    class F1,F2,F3,F4,F5,F6,F7,WP frame
-    class D1,D2,D3,D4,D5 data
-    class OUT out
+    classDef a fill:#0b2b1f,stroke:#3ddc97,color:#d8ffe9
+    classDef b fill:#0a1f2b,stroke:#4bc8ff,color:#dbf3ff
+    classDef c fill:#2b220a,stroke:#e8c34a,color:#fff3d0
+    classDef d fill:#2b0a1a,stroke:#ff6ba6,color:#ffd9e7
+    class A a
+    class B b
+    class C c
+    class D,E d
 ```
 
 There is no engine and no abstraction layer: one source file, one 16 ms loop,
@@ -431,6 +406,78 @@ The scrolling message is the one thing GDI still draws for us, with `TextOutA`.
 Every odd row is then scaled to `205/255` for the worn CRT feel — **colour
 only, never alpha**, or half the window would go see-through.
 
+## 8. `StartMusic` — the chiptune
+
+A cracktro without music is a screensaver. The soundtrack is generated, not
+loaded: an 8 kHz, 8 bit, mono PCM buffer of exactly eight seconds is rendered
+into `.bss` at startup and then handed to the mixer **on an infinite hardware
+loop**, so the demo spends zero instructions per frame on audio.
+
+```nasm
+    mov dword [wave_hdr + 24], 0x0C     ; WHDR_BEGINLOOP | WHDR_ENDLOOP
+    mov dword [wave_hdr + 28], -1       ; and never stop looping
+```
+
+That trick is what keeps it cheap: no callback, no streaming thread, no double
+buffering. Three imports (`waveOutOpen`, `waveOutPrepareHeader`,
+`waveOutWrite`), called once, and the tune runs itself for the rest of the
+process lifetime. If `waveOutOpen` fails the demo simply runs silent.
+
+Three voices, which is exactly what the hardware being imitated had:
+
+| voice | waveform | role |
+| --- | --- | --- |
+| bass | 50 % square | root of the chord, replucked every row |
+| lead | 25 % pulse | arpeggio, one chord tone per row |
+| hat | noise burst | short decaying click on the off rows |
+
+Pitch is a phase accumulator. A note is packed as `(octave << 4) | semitone`,
+because going up an octave is doubling the frequency, which is shifting the
+increment left — so one twelve entry table covers the whole keyboard:
+
+```nasm
+note_incr     dw 536, 568, 601, 637, 675, 715, 758, 803, 851, 901, 955, 1011
+
+NoteIncr:
+    mov eax, ecx
+    and eax, 15                         ; semitone picks the table entry,
+    lea rdx, [note_incr]                ; octave is a shift: doubling the
+    movzx ebx, word [rdx + rax * 2]     ; frequency is doubling the increment
+    shr ecx, 4
+    shl ebx, cl
+    ret
+```
+
+The song is 20 bytes: four chords, `Am F C G`, two seconds each, four arpeggio
+notes per chord.
+
+```nasm
+arp_tab       db 0x39, 0x40, 0x44, 0x49
+              db 0x35, 0x39, 0x40, 0x45
+              db 0x30, 0x34, 0x37, 0x40
+              db 0x37, 0x3B, 0x42, 0x47
+bass_tab      db 0x19, 0x15, 0x10, 0x17
+```
+
+The one thing that separates a tracker from an organ is the envelope. Every
+note decays linearly across its own row, so each one has an attack:
+
+```nasm
+    mov r9d, r10d
+    shr r9d, 2
+    mov r8d, 250                        ; linear pluck: every note decays over
+    sub r8d, r9d                        ; its own row, so the tune has attack
+    jns .env_ok
+    xor r8d, r8d
+.env_ok:
+```
+
+A spectrogram of the rendered buffer shows the progression falling out of it —
+the bass stepping 220 → 175 → 131 → 196 Hz, the arpeggio above it, and the
+vertical striations of one pluck every 125 ms:
+
+![tune](docs/tune.png)
+
 ---
 
 # Frame order
@@ -456,6 +503,7 @@ second run.
 | `InitField` / `ResetStar` / `ProjectStar` / `SyncTrail` | Starfield simulation and perspective projection. |
 | `DrawTrail` | DDA line plotter, replaces `MoveToEx` / `LineTo`. |
 | `BurnEdges` | Sideways fire simulation at the plank tips. |
+| `NoteIncr` / `StartMusic` | Chiptune synthesis and the looping `waveOut` buffer. |
 | `AlphaPass` | Scanlines, fire compositing, alpha and premultiply. |
 | `DemoMain` | Window class, layered window, DIB, message loop. |
 | `WndProc` | 20 ms timer tick, drag to move, Escape to quit. |
@@ -464,7 +512,7 @@ second run.
 
 # Size
 
-The demo is **6 144 bytes**. Getting there was mostly a fight with the PE
+The demo is **7 168 bytes**. Getting there was mostly a fight with the PE
 layout rather than with the code.
 
 A PE file is `SizeOfHeaders` plus every section rounded up to the 512 byte file
@@ -472,23 +520,33 @@ alignment, so the real currency is *sections*, not instructions:
 
 ```
 headers   0x400
-.text     0xfb0  →  0x1000        (4016 of 4096 used)
-.idata    0x3f4  →  0x0400        (1012 of 1024 used)
-                    ------
-                    0x1800  =  6144
+.text     0x1200  →  0x1200       (4608 of 4608 used, to the byte)
+.idata    0x0498  →  0x0600       (1176 of 1536 used)
+                     ------
+                     0x1C00  =  7168
 ```
 
-Both sections sit within a few bytes of a 512 byte cliff, so the budget is real:
-adding one import or one more line of scroll text costs 512 bytes of file.
+The graphics-only build was **6 144 bytes**. Adding sound cost exactly two
+alignment blocks: one because `.text` crossed 0x1000, one because the three
+`winmm` imports pushed `.idata` past 0x400. The synthesis code itself is about
+330 bytes and the tune data is 62.
+
+`.text` is now full to the byte, which is not a figure of speech: the last
+build was 16 bytes over the cliff and only fit after two amplitude `imul`s
+became shifts, two zero stores became register stores, and six trailing spaces
+were cut from the scroll text.
 
 What worked:
 
 * **`tiny.ld`.** The linker's built in script emits constructor marker sections,
   `.edata`, `.tls`, `.didat` and pseudo-reloc sections that a freestanding
   program has no use for. Discarding them dropped 7 168 → 6 656 bytes.
-* **Fewer imports.** 28 symbols down to 23. `BitBlt` became an inline qword
-  clear loop; `GetStockObject`, `SetDCPenColor`, `MoveToEx` and `LineTo` were
-  replaced by `DrawTrail`.
+* **A looping `waveOut` buffer** instead of streaming. Rendering the tune once
+  and setting `dwLoops = -1` removed the callback, the second buffer and the
+  bookkeeping that goes with them.
+* **Fewer imports.** 28 symbols down to 23 for the graphics. `BitBlt` became an
+  inline qword clear loop; `GetStockObject`, `SetDCPenColor`, `MoveToEx` and
+  `LineTo` were replaced by `DrawTrail`.
 * **Code diet.** Runs of `mov qword [rsp+N], 0` before the big API calls became
   `rep stosq`; the constant `SIZE`, `POINT` and `BLENDFUNCTION` structures moved
   out of the stack frame into `.text` literals; the scroll text was trimmed to

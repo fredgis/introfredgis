@@ -21,7 +21,7 @@
 ;          "x86_64-w64-mingw32\lib"
 ;   nasm -Ox -f win64 fredgis.asm -o fredgis.o
 ;   ld -mi386pep --subsystem windows -e start -s -T tiny.ld -o fredgis.exe `
-;      fredgis.o "-L$lib" -lkernel32 -luser32 -lgdi32
+;      fredgis.o "-L$lib" -lkernel32 -luser32 -lgdi32 -lwinmm
 ; ============================================================================
 
 bits 64
@@ -51,7 +51,8 @@ default rel
 %define PLANK_H             45
 %define PLANK_FADE          64           ; power of two: the ramp divide is a
                                          ; shift instead of an idiv
-%define TIP_MAX             70           ; deepest a plank end can be eaten
+%define TIP_MAX             50           ; deepest a plank end can be eaten,
+                                         ; wobble included
 %define PLANK_CORE          (TIP_MAX + PLANK_FADE)
 %define GLOBAL_A            196          ; nothing is fully solid: the desktop
                                          ; stays clearly visible through it all
@@ -65,6 +66,12 @@ default rel
                                          ; straight black to green seam right
                                          ; where the source sits
 %define SCANLINE            205          ; colour scale of every odd row
+
+%define SND_HZ              8000         ; crunchy on purpose: this is the
+                                         ; sample rate a 1990s intro would use
+%define SND_ROWS            64           ; a row is one arpeggio step
+%define SND_ROWLEN          1000         ; 125 ms, so the loop is eight seconds
+%define AUDIO_LEN           (SND_ROWS * SND_ROWLEN)
 
 %define STARS               200
 %define STAR_NEAR           26
@@ -109,6 +116,9 @@ extern GetTextExtentPoint32A
 extern CreateCompatibleDC
 extern CreateDIBSection
 extern GdiFlush
+extern waveOutOpen
+extern waveOutPrepareHeader
+extern waveOutWrite
 
 ; ----------------------------------------------------------------------------
 ; Constants live inside .text: no extra section, hence no extra PE padding.
@@ -134,12 +144,29 @@ level_col     dd 0x00D8FFE8, 0x0044FF88, 0x0022E068, 0x001AC055
               dd 0x0012A044, 0x000C8034
 
 scroll_text   db "CONVICTION, CREATIVITY & DATA: THE FUEL OF THE MODERN "
-              db "ARCHITECT          ", 0
+              db "ARCHITECT    ", 0
 scroll_len    equ $ - scroll_text - 1
 
 ulw_size      dd SCR_W, SCR_H             ; constant arguments of the blit
 ulw_src       dd 0, 0
 ulw_blend     dd BLEND_ARGB
+
+; One octave of phase increments for the 8 kHz oscillators: incr = f * 65536
+; / SND_HZ, starting at C2. Any higher octave is the same value shifted left,
+; which is why notes are packed as (octave << 4) | semitone.
+note_incr     dw 536, 568, 601, 637, 675, 715, 758, 803, 851, 901, 955, 1011
+
+; The tune: Am - F - C - G, two seconds each, four arpeggio notes per chord.
+arp_tab       db 0x39, 0x40, 0x44, 0x49
+              db 0x35, 0x39, 0x40, 0x45
+              db 0x30, 0x34, 0x37, 0x40
+              db 0x37, 0x3B, 0x42, 0x47
+bass_tab      db 0x19, 0x15, 0x10, 0x17
+
+wave_fmt      dw 1, 1                     ; WAVE_FORMAT_PCM, mono
+              dd SND_HZ, SND_HZ           ; one byte per sample, so the byte
+              dw 1, 8                     ; rate is the sample rate
+              dw 0
 
 section .bss
 window_handle resq 1
@@ -170,6 +197,9 @@ stars_sx      resd STARS
 stars_sy      resd STARS
 stars_px      resd STARS
 stars_py      resd STARS
+wave_out      resq 1
+wave_hdr      resb 48                     ; WAVEHDR, x64 layout
+audio         resb AUDIO_LEN              ; the whole tune, rendered once
 
 section .text
 global start
@@ -388,21 +418,26 @@ MakeMask:
     push r13
     push r14
     push r15
-    sub rsp, 64
+    push rbx
+    push rsi
+    push rdi
+    sub rsp, 40
 
     lea r13, [mask]
+    lea rsi, [tip_l]
+    lea rdi, [tip_r]
     xor r12d, r12d
 .plank:
     call NextRand
     and eax, 15
-    imul eax, eax, 4                    ; 10..TIP_MAX: the planks must end at
-    add eax, 10                         ; clearly different depths or the
-    mov r14d, eax                       ; silhouette reads as a rectangle
+    imul eax, eax, 2                    ; 16..TIP_MAX. The spread stays small:
+    add eax, 16                         ; a big one turns the stack into a
+    mov r14d, eax                       ; visible staircase of black steps
 
     call NextRand
     and eax, 15
-    imul eax, eax, 4
-    add eax, 10
+    imul eax, eax, 2
+    add eax, 16
     mov r15d, SCR_W
     sub r15d, eax                       ; where it stops on the right
 
@@ -410,22 +445,33 @@ MakeMask:
     imul eax, eax, PLANK_H * SCR_W
     lea r10, [r13 + rax]                ; first row of this plank
 
-    mov eax, r12d                       ; remember the two tips: the flames
-    imul eax, eax, PLANK_H              ; burn outwards from there
-    lea r9, [tip_l]
-    lea r8, [tip_r]
+    mov ebx, r12d                       ; global row index: the tips are stored
+    imul ebx, ebx, PLANK_H              ; per row, not per plank
+    mov r9, rsi
+    mov r8, rdi
     mov r11d, PLANK_H
 .tip:
-    mov dword [r9 + rax * 4], r14d
-    mov ecx, r15d
-    dec ecx
-    mov dword [r8 + rax * 4], ecx
-    inc eax
+    call NextRand
+    and eax, 7                          ; wobble each row a few pixels: a tip
+    sub eax, 4                           ; that is constant down the plank
+    add eax, r14d                       ; draws a ruler straight edge, and a
+    mov dword [r9 + rbx * 4], eax       ; straight edge is what reads as square
+    call NextRand
+    and eax, 7
+    sub eax, 4
+    add eax, r15d
+    dec eax
+    mov dword [r8 + rbx * 4], eax
+    inc rbx
     dec r11d
     jnz .tip
 
+    sub rbx, PLANK_H                    ; rewind: the row loop walks it again
     mov r11d, PLANK_H
 .row:
+    mov r14d, dword [rsi + rbx * 4]     ; this row has its own pair of tips
+    mov r15d, dword [rdi + rbx * 4]
+    inc rbx
     xor ecx, ecx
 .col:
     mov eax, ecx                        ; ramp up from the left tip
@@ -442,7 +488,6 @@ MakeMask:
 .have_left:
     mov r8d, eax
     mov eax, r15d                       ; ramp up from the right tip
-    dec eax
     sub eax, ecx
     test eax, eax
     jle .clear
@@ -473,7 +518,10 @@ MakeMask:
     mov dword [box_x0], PLANK_CORE
     mov dword [box_x1], SCR_W - PLANK_CORE
 
-    add rsp, 64
+    add rsp, 40
+    pop rdi
+    pop rsi
+    pop rbx
     pop r15
     pop r14
     pop r13
@@ -861,6 +909,167 @@ AlphaPass:
 ;   rsp+288       DIB bits pointer
 ;   rsp+296       SIZE for GetTextExtentPoint32A
 ; ----------------------------------------------------------------------------
+; ----------------------------------------------------------------------------
+; Packed note in ecx -> phase increment in ebx. Clobbers eax, ecx, edx.
+; ----------------------------------------------------------------------------
+NoteIncr:
+    mov eax, ecx
+    and eax, 15                         ; semitone picks the table entry,
+    lea rdx, [note_incr]                ; octave is a shift: doubling the
+    movzx ebx, word [rdx + rax * 2]     ; frequency is doubling the increment
+    shr ecx, 4
+    shl ebx, cl
+    ret
+
+; ----------------------------------------------------------------------------
+; Render the whole tune into .bss, then hand it to the mixer on an infinite
+; hardware loop.
+;
+; Two oscillators and a noise channel, exactly what a chip had: a 50% square
+; bass, a 25% pulse lead running an arpeggio, and a decaying noise burst for
+; the hat. Everything is plucked, that is, the amplitude falls linearly across
+; the row, which is what makes it read as a tracker and not as an organ.
+;
+; The buffer is rendered once at startup and played with WHDR_BEGINLOOP and
+; dwLoops = -1, so the mixer repeats it on its own: no callback, no streaming
+; thread, and not one instruction per frame spent on audio.
+; ----------------------------------------------------------------------------
+StartMusic:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+    push rsi
+    push rdi
+    sub rsp, 72
+
+    lea rdi, [audio]
+    xor r12d, r12d                      ; row
+    xor r14d, r14d                      ; bass phase
+    xor r15d, r15d                      ; lead phase
+.row:
+    mov r9d, r12d
+    shr r9d, 4                          ; one chord every sixteen rows
+    lea rsi, [bass_tab]
+    movzx ecx, byte [rsi + r9]
+    call NoteIncr
+    mov r13d, ebx                       ; bass increment for this row
+
+    mov eax, r12d
+    and eax, 3                          ; the arpeggio walks the chord, one
+    lea rdx, [r9 * 4]                   ; note per row
+    add rax, rdx
+    lea rsi, [arp_tab]
+    movzx ecx, byte [rsi + rax]
+    call NoteIncr                       ; lead increment stays in ebx
+
+    mov r11d, SND_ROWLEN
+    xor r10d, r10d
+.samp:
+    mov r9d, r10d
+    shr r9d, 2
+    mov r8d, 250                        ; linear pluck: every note decays over
+    sub r8d, r9d                        ; its own row, so the tune has attack
+    jns .env_ok
+    xor r8d, r8d
+.env_ok:
+
+    add r14d, r13d                      ; 50% square, the fat one
+    mov ecx, r8d
+    shr ecx, 3
+    test r14d, 0x8000
+    jnz .bass_hi
+    neg ecx
+.bass_hi:
+    mov esi, ecx
+
+    add r15d, ebx                       ; 25% pulse: the duty cycle is what
+    mov eax, r15d                       ; makes the lead thin and nasal
+    shr eax, 14
+    and eax, 3
+    mov ecx, r8d
+    shr ecx, 3
+    cmp eax, 3
+    je .lead_hi
+    neg ecx
+.lead_hi:
+    add esi, ecx
+
+    test r12d, 1                        ; hat on the off rows only
+    jz .no_hat
+    cmp r10d, 120
+    jae .no_hat
+    call NextRand
+    mov ecx, 120
+    sub ecx, r10d
+    shr ecx, 2                          ; a very short decaying noise burst
+    test eax, 1
+    jnz .hat_hi
+    neg ecx
+.hat_hi:
+    add esi, ecx
+.no_hat:
+
+    add esi, 128                        ; 8 bit PCM is unsigned, silence is 128
+    test esi, esi
+    jns .lo_ok
+    xor esi, esi
+.lo_ok:
+    cmp esi, 255
+    jle .hi_ok
+    mov esi, 255
+.hi_ok:
+    mov byte [rdi], sil
+    inc rdi
+    inc r10d
+    dec r11d
+    jnz .samp
+
+    inc r12d
+    cmp r12d, SND_ROWS
+    jb .row
+
+    lea rcx, [wave_out]
+    mov edx, -1                         ; WAVE_MAPPER
+    lea r8, [wave_fmt]
+    xor r9d, r9d
+    mov qword [rsp + 32], r9
+    mov qword [rsp + 40], r9
+    call waveOutOpen
+    test eax, eax
+    jnz .done                           ; no output device: just run silent
+
+    lea rax, [audio]
+    mov qword [wave_hdr], rax
+    mov dword [wave_hdr + 8], AUDIO_LEN
+    mov dword [wave_hdr + 24], 0x0C     ; WHDR_BEGINLOOP | WHDR_ENDLOOP
+    mov dword [wave_hdr + 28], -1       ; and never stop looping
+
+    mov rcx, qword [wave_out]
+    lea rdx, [wave_hdr]
+    mov r8d, 48
+    call waveOutPrepareHeader
+
+    mov rcx, qword [wave_out]
+    lea rdx, [wave_hdr]
+    mov r8d, 48
+    call waveOutWrite
+.done:
+    add rsp, 72
+    pop rdi
+    pop rsi
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    pop rbp
+    ret
+
+; ----------------------------------------------------------------------------
 DemoMain:
     push rbp
     mov rbp, rsp
@@ -978,6 +1187,7 @@ DemoMain:
     call BuildLogo
     call MakeMask
     call InitField
+    call StartMusic
 
     mov eax, dword [box_x0]
     mov dword [x_pos], eax
