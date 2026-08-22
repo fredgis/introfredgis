@@ -243,7 +243,7 @@ NextRand:
 
 ; ----------------------------------------------------------------------------
 ; Fill a SCALE by SCALE block straight into the DIB.
-; ecx = x, edx = y, r8d = 0x00RRGGBB. Clobbers rax, r9, r10, r11 only.
+; ecx = x, edx = y, r8d = 0x00RRGGBB. Clobbers rax and r10 only.
 ; ----------------------------------------------------------------------------
 DrawBlock:
     imul ecx, ecx, SCALE                ; block coordinates, scaled and offset
@@ -254,20 +254,20 @@ DrawBlock:
     imul eax, eax, SCR_W
     add eax, ecx
     shl eax, 2
-    mov r9, qword [pixels]
-    add r9, rax
-    mov r10d, SCALE
+    push rdi
+    mov rdi, qword [pixels]             ; a row is SCALE contiguous dwords, so
+    add rdi, rax                        ; it is one rep stosd. That leaves rdi
+    mov eax, r8d                        ; on the pixel after the block, and the
+    push SCALE                          ; step to the next row is only the rest
+    pop r10                             ; of the scanline
 .row:
-    mov rax, r9
-    mov r11d, SCALE
-.col:
-    mov dword [rax], r8d
-    add rax, 4
-    dec r11d
-    jnz .col
-    add r9, SCR_W * 4
+    push SCALE
+    pop rcx
+    rep stosd
+    add rdi, (SCR_W - SCALE) * 4
     dec r10d
     jnz .row
+    pop rdi
     ret
 
 ; ----------------------------------------------------------------------------
@@ -854,21 +854,15 @@ AlphaPass:
     imul eax, r11d                      ; premultiplies to a transparent black
     shr eax, 8                          ; and coverage 255 to the pixel itself,
     mov edx, dword [r14 + rcx * 4]      ; so the two shortcuts they used to have
-    movzx r8d, dl                       ; were pure code size
-    imul r8d, eax
-    shr r8d, 8
-    shr edx, 8
-    movzx r9d, dl
-    imul r9d, eax
-    shr r9d, 8
-    shr edx, 8
-    movzx edx, dl
-    imul edx, eax
-    shr edx, 8
-    shl edx, 16
-    shl r9d, 8
-    or edx, r9d
-    or edx, r8d
+    movd xmm1, eax                      ; were pure code size
+    pshuflw xmm1, xmm1, 0x40            ; the factor spread over words 0..2 and
+    movd xmm0, edx                      ; left at zero in word 3, so the source
+    pxor xmm2, xmm2                     ; alpha byte cannot survive the multiply
+    punpcklbw xmm0, xmm2                ; and the OR below still owns it
+    pmullw xmm0, xmm1
+    psrlw xmm0, 8
+    packuswb xmm0, xmm0
+    movd edx, xmm0
     shl r10d, 24                        ; alpha keeps the untouched coverage
     or edx, r10d
     mov dword [r14 + rcx * 4], edx
