@@ -161,14 +161,14 @@ scroll_text   db "CONVICTION & DATA: THE FUEL OF THE MODERN ARCHITECT    ", 0
 scroll_len    equ $ - scroll_text - 1
 
 ulw_size      dd SCR_W, SCR_H             ; constant arguments of the blit
-ulw_src       dd 0, 0
 ulw_blend     dd BLEND_ARGB
+              dd 0, 0                     ; POINT {0, 0}
 
 dib_head      dd 40                       ; BITMAPINFOHEADER, a pure constant:
               dd SCR_W                    ; built here rather than on the stack
               dd -SCR_H                   ; negative height: top down rows
               dw 1, 32                    ; biPlanes, biBitCount, BI_RGB
-              dd 0, 0, 0, 0, 0, 0
+              dd 0
 
 ; One octave of phase increments for the 8 kHz oscillators: incr = f * 65536
 ; / SND_HZ, starting at C2. Any higher octave is the same value shifted left,
@@ -754,7 +754,7 @@ AlphaPass:
     mov r11d, 256                       ; colour scale for this row
     test r12b, 1
     jz .scan_ok
-    mov r11d, SCANLINE
+    sub r11d, 256 - SCANLINE
 .scan_ok:
     mov esi, dword [rbp + r12 * 4]      ; where the two flame fronts start
     add esi, FLAME_IN
@@ -1433,12 +1433,12 @@ WndProc:
     lea r9, [ulw_size]
     mov rax, qword [mem_dc]
     mov qword [rsp + 32], rax
-    lea rax, [r9 + 8]
+    lea rax, [r9 + 12]
     mov qword [rsp + 40], rax
     mov qword [rsp + 48], r8
-    lea rax, [r9 + 16]
+    lea rax, [r9 + 8]
     mov qword [rsp + 56], rax
-    mov qword [rsp + 64], ULW_ALPHA
+    mov dword [rsp + 64], ULW_ALPHA
     call UpdateLayeredWindow
 
 .zero:
