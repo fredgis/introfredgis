@@ -82,13 +82,13 @@ Budget '5 120' `
 Budget '3 584' `
     @(@{n='headers';b=512;c=$pink}, @{n='.text';b=2560;c=$teal}, @{n='.idata';b=512;c=$blue}) `
     @(
-        @{n='DemoMain     message loop and frame blit';       b=1001; c=$teal},
+        @{n='DemoMain     message loop and frame blit';       b=990; c=$teal},
         @{n='AlphaPass    premultiplied compositor';          b=338;  c=$blue},
         @{n='BurnEdges    the fire simulation';               b=332;  c=$teal},
-        @{n='starfield    project, trail, respawn';           b=311;  c=$pink},
-        @{n='MakeMask     plank silhouette and smoothstep';   b=286;  c=$teal},
+        @{n='starfield    project, trail, respawn';           b=305;  c=$pink},
+        @{n='MakeMask     plank silhouette and smoothstep';   b=283;  c=$teal},
+        @{n='data         font and palette only';             b=147;  c=$amber},
         @{n='logo + rain  block font rasteriser';             b=140;  c=$blue},
-        @{n='data         font and palette only';             b=127;  c=$amber},
         @{n='entry + RNG';                                    b=25;   c=$grey}
     ) `
     'the same demo with the music, the scroller and the drag removed' `

@@ -138,7 +138,7 @@ dib_head      dd 40                       ; BITMAPINFOHEADER, a pure constant:
               dd SCR_W                    ; built here rather than on the stack
               dd -SCR_H                   ; negative height: top down rows
               dw 1, 32                    ; biPlanes, biBitCount, BI_RGB
-              dd 0
+              dd 0, 0, 0, 0, 0, 0
 
 section .bss
 pixels        resq 1                      ; DIB bits, top down, 32 bpp
@@ -253,7 +253,8 @@ MakeMask:
     mov r10, r13
     lea rsi, [tip_l]
     lea rdi, [tip_r]
-    xor r12d, r12d
+    push NPLANK
+    pop r12
     xor ebx, ebx
 .plank:
     call NextRand
@@ -328,9 +329,8 @@ MakeMask:
     dec r11d
     jnz .row
 
-    inc r12d
-    cmp r12d, NPLANK
-    jb .plank
+    dec r12d
+    jnz .plank
 
     pop rdi
     pop rsi
@@ -344,16 +344,6 @@ MakeMask:
 ; Scatter the stars and prime the rain columns.
 ; ----------------------------------------------------------------------------
 InitField:
-    lea rbx, [stars]
-    mov r12d, STARS
-.stars:
-    call ResetStar
-    call ProjectStar
-    call SyncTrail
-    add rbx, ST_N * 4
-    dec r12d
-    jnz .stars
-
     lea rbx, [rain]
     push LOGO_COLS
     pop r12
@@ -368,6 +358,16 @@ InitField:
     add rbx, RN_N * 4
     dec r12d
     jnz .rain
+
+    push STARS
+    pop r12
+.stars:
+    call ResetStar
+    call ProjectStar
+    call SyncTrail
+    add rbx, ST_N * 4
+    dec r12d
+    jnz .stars
     ret
 
 ; ----------------------------------------------------------------------------
@@ -766,7 +766,7 @@ AlphaPass:
 ; ----------------------------------------------------------------------------
 start:
 DemoMain:
-    push r12
+    push rbp
     push rsi
     push rdi
     sub rsp, 112
@@ -788,21 +788,21 @@ DemoMain:
     xor r8d, r8d
     mov r9d, WS_POPUP_VISIBLE
     call CreateWindowExA
-    mov rsi, rax
+    mov rsi, rax                        ; hwnd stays in non-volatile rsi
 
     ; ---- back buffer we poke byte by byte, no GDI drawing left at all
     xor ecx, ecx
     call CreateCompatibleDC
-    mov r12, rax
+    mov rbp, rax                        ; mem_dc stays in non-volatile rbp
 
-    mov rcx, r12
+    mov rcx, rbp
     lea rdx, [dib_head]                 ; a constant, so it lives in .text
     xor r8d, r8d
     lea r9, [pixels]
     mov qword [rsp + 32], r8
     mov qword [rsp + 40], r8
     call CreateDIBSection
-    mov rcx, r12
+    mov rcx, rbp
     mov rdx, rax
     call SelectObject
 
@@ -889,7 +889,8 @@ DemoMain:
     jnz .rain_step
 
     lea rbx, [stars]
-    mov r12d, STARS
+    push STARS
+    pop r12
 .star_step:
     call SyncTrail
     sub dword [rbx + ST_Z], STAR_SPEED
@@ -919,7 +920,8 @@ DemoMain:
     rep stosq
 
     lea rbx, [stars]
-    mov r12d, STARS
+    push STARS
+    pop r12
 .star_draw:
     mov eax, dword [rbx + ST_Z]
     shr eax, 2
@@ -1009,7 +1011,8 @@ DemoMain:
     ; loose blocks floating around the word, reshuffled every eight frames
     mov r13d, dword [frame_counter]
     shr r13d, 3
-    xor r12d, r12d
+    push GLITCH
+    pop r12
 .glitch:
     imul eax, r12d, -1640531527
     add eax, r13d
@@ -1037,9 +1040,8 @@ DemoMain:
     mov r8d, 0x00186A2A
     call DrawBlock
 .glitch_next:
-    inc r12d
-    cmp r12d, GLITCH
-    jb .glitch
+    dec r12d
+    jnz .glitch
 
     call BurnEdges
     call AlphaPass
@@ -1048,7 +1050,7 @@ DemoMain:
     xor edx, edx
     xor r8d, r8d
     lea r9, [ulw_size]
-    mov qword [rsp + 32], r12
+    mov qword [rsp + 32], rbp
     lea rax, [r9 + 12]
     mov qword [rsp + 40], rax
     mov qword [rsp + 48], r8
