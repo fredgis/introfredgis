@@ -185,8 +185,7 @@ bass_tab      db 0x19, 0x15, 0x10, 0x17
 ; Octave offsets per part. Nothing goes up: at 8 kHz the Nyquist limit is
 ; 4 kHz, and a pulse wave whose harmonics fold back around it turns to noise,
 ; so the second half drops an octave instead of climbing one.
-part_lead     db 0, -16
-part_bass     db 0, -16
+part_octave   db 0, -16
 
 wave_fmt      dw 1, 1                     ; WAVE_FORMAT_PCM, mono
               dd SND_HZ, SND_HZ           ; one byte per sample, so the byte
@@ -908,7 +907,7 @@ StartMusic:
     and r9d, 3                          ; one chord every sixteen rows
 
     movzx ecx, byte [rbp + r9 + (bass_tab - arp_tab)]
-    movsx edx, byte [rbp + r8 + (part_bass - arp_tab)]
+    movsx edx, byte [rbp + r8 + (part_octave - arp_tab)]
     add ecx, edx
     call NoteIncr
     mov r13d, ebx                       ; bass increment for this row
@@ -921,7 +920,7 @@ StartMusic:
 .arp_up:
     lea eax, [rax + r9 * 4]
     movzx ecx, byte [rbp + rax]
-    movsx edx, byte [rbp + r8 + (part_lead - arp_tab)]
+    movsx edx, byte [rbp + r8 + (part_octave - arp_tab)]
     add ecx, edx
     call NoteIncr                       ; lead increment stays in ebx
 
@@ -1049,15 +1048,15 @@ DemoMain:
     lea rcx, [rsp + 112]
     call RegisterClassA
 
-    lea rdi, [rsp + 64]                 ; the last four arguments are NULL
+    lea rdi, [rsp + 32]
     xor eax, eax
-    push 4
+    push 8
     pop rcx
     rep stosq
-    mov qword [rsp + 32], 150
-    mov qword [rsp + 40], 110
-    mov qword [rsp + 48], SCR_W
-    mov qword [rsp + 56], SCR_H
+    mov dword [rsp + 32], 150
+    mov dword [rsp + 40], 110
+    mov dword [rsp + 48], SCR_W
+    mov dword [rsp + 56], SCR_H
     mov ecx, WS_EX_LAYERED
     lea rdx, [class_name]
     xor r8d, r8d
@@ -1095,7 +1094,7 @@ DemoMain:
     push 8
     pop rcx
     rep stosq
-    mov qword [rsp + 32], 700
+    mov dword [rsp + 32], 700
     lea rax, [scroll_font]
     mov qword [rsp + 104], rax
     mov ecx, -SCROLL_H

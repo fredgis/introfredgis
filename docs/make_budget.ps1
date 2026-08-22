@@ -60,14 +60,14 @@ function Budget($total, $parts, $rows, $sub1, $sub2, $note1, $note2, $used, $fil
 Budget '5 632' `
     @(@{n='headers';b=512;c=$pink}, @{n='.text';b=4096;c=$teal}, @{n='.idata';b=1024;c=$blue}) `
     @(
-        @{n='WndProc      frame loop and import thunks';      b=1073; c=$teal},
-        @{n='DemoMain     window, layered DIB, GDI font';     b=444;  c=$blue},
+        @{n='WndProc      frame loop and import thunks';      b=1075; c=$teal},
+        @{n='DemoMain     window, layered DIB, GDI font';     b=439;  c=$blue},
         @{n='StartMusic   chiptune synthesis and waveOut';    b=409;  c=$pink},
         @{n='starfield    project, trail, respawn';           b=353;  c=$blue},
         @{n='AlphaPass    premultiplied compositor';          b=353;  c=$teal},
         @{n='MakeMask     plank silhouette and smoothstep';   b=297;  c=$pink},
         @{n='BurnEdges    the fire simulation';               b=333;  c=$teal},
-        @{n='data         font, palette, tune, scroll text';  b=280;  c=$amber},
+        @{n='data         font, palette, tune, scroll text';  b=278;  c=$amber},
         @{n='logo + rain  block font rasteriser';             b=143;  c=$blue},
         @{n='entry + RNG';                                    b=27;   c=$grey}
     ) `
@@ -82,12 +82,12 @@ Budget '5 632' `
 Budget '4 096' `
     @(@{n='headers';b=512;c=$pink}, @{n='.text';b=3072;c=$teal}, @{n='.idata';b=512;c=$blue}) `
     @(
-        @{n='DrawFrame    frame loop and import thunks';      b=791; c=$teal},
+        @{n='DrawFrame    frame loop and import thunks';      b=795; c=$teal},
         @{n='starfield    project, trail, respawn';           b=353; c=$pink},
         @{n='AlphaPass    premultiplied compositor';          b=353; c=$blue},
         @{n='MakeMask     plank silhouette and smoothstep';   b=297; c=$teal},
         @{n='BurnEdges    the fire simulation';               b=333; c=$blue},
-        @{n='DemoMain     window, layered DIB, message loop'; b=308; c=$pink},
+        @{n='DemoMain     window, layered DIB, message loop'; b=304; c=$pink},
         @{n='logo + rain  block font rasteriser';             b=143; c=$teal},
         @{n='data         font and palette only';             b=147; c=$amber},
         @{n='entry + RNG';                                    b=27;  c=$grey}

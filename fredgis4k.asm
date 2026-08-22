@@ -812,15 +812,15 @@ DemoMain:
     rdtsc                               ; a moving seed with no import at all:
     or eax, 1                           ; the planks are torn differently on
     mov dword [rng_seed], eax           ; every launch
-    lea rdi, [rsp + 64]                 ; the last four arguments are NULL
+    lea rdi, [rsp + 32]
     xor eax, eax
-    push 4
+    push 8
     pop rcx
     rep stosq
-    mov qword [rsp + 32], 150
-    mov qword [rsp + 40], 110
-    mov qword [rsp + 48], SCR_W
-    mov qword [rsp + 56], SCR_H
+    mov dword [rsp + 32], 150
+    mov dword [rsp + 40], 110
+    mov dword [rsp + 48], SCR_W
+    mov dword [rsp + 56], SCR_H
     mov ecx, WS_EX_LAYERED
     lea rdx, [class_name]               ; a predefined class, so there is no
     xor r8d, r8d                        ; window procedure to register and no
