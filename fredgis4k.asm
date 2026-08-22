@@ -721,8 +721,7 @@ AlphaPass:
     test eax, eax
     jz .no_flame
     cmp eax, r10d                       ; embers glow a little past the tear
-    jbe .flame_paint
-    mov r10d, eax
+    cmova r10d, eax
 .flame_paint:
     mov edx, 255                        ; the cold tail reads as ash: R ~ G ~ B
     sub edx, eax                        ; so the tips end in grey black smoke

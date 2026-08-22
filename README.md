@@ -590,7 +590,7 @@ alignment, so the real currency is *blocks*, not instructions:
 
 ```
 headers   0x0200                        (448 of 512 used)
-.text     0x0E50  →  0x1000             (3664 of 4096 used)
+.text     0x0E40  →  0x1000             (3648 of 4096 used)
 .idata    0x03DC  →  0x0400             ( 988 of 1024 used)
                      ------
                      0x1600  =  5632
@@ -678,7 +678,7 @@ linkers emit 0x200 to begin with.
 
 ## Where it stops
 
-`.text` holds 3 664 bytes in a 4 096 block and `.idata` 988 in a 1 024 block.
+`.text` holds 3 648 bytes in a 4 096 block and `.idata` 988 in a 1 024 block.
 Because the file is quantised in 512 byte steps, **shaving another twenty or
 fifty bytes changes nothing at all** — the next gain needs a whole block.
 
@@ -691,7 +691,7 @@ tricks do not get you there:
 | drop the high octave from the tune | −16 bytes, **file unchanged** |
 | apply every peephole idiom left | under 100 bytes, **file unchanged** |
 | `rep stosd` block fill and a SIMD premultiply | −32 in `.text`, **file unchanged** |
-| drop music + scroller + drag + window class | −960 in `.text`, −520 in `.idata`, **file 5 632 → 4 096** |
+| drop music + scroller + drag + window class | −944 in `.text`, −520 in `.idata`, **file 5 632 → 4 096** |
 
 The measured floor for `.idata` is the interesting part. Eleven imports — the
 smallest set that still creates a layered window and blits it — assembles to

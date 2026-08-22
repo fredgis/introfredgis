@@ -781,8 +781,7 @@ AlphaPass:
     test eax, eax
     jz .no_flame
     cmp eax, r10d                       ; embers glow a little past the tear
-    jbe .flame_paint
-    mov r10d, eax
+    cmova r10d, eax
 .flame_paint:
     mov edx, 255                        ; the cold tail reads as ash: R ~ G ~ B
     sub edx, eax                        ; so the tips end in grey black smoke
@@ -913,13 +912,10 @@ StartMusic:
     mov r11d, SND_ROWLEN
     xor r10d, r10d
 .samp:
-    mov r9d, r10d
-    shr r9d, 2
     mov r8d, 250                        ; linear pluck: every note decays over
-    sub r8d, r9d                        ; its own row, so the tune has attack
-    jns .env_ok
-    xor r8d, r8d
-.env_ok:
+    mov r9d, r10d                       ; its own row, so the tune has attack
+    shr r9d, 2
+    sub r8d, r9d
     shr r8d, 3
 
     add r14d, r13d                      ; 50% square, the fat one
@@ -983,7 +979,7 @@ StartMusic:
     lea rax, [audio]
     mov qword [rbx], rax
     mov dword [rbx + 8], AUDIO_LEN
-    mov dword [rbx + 24], 0x0C          ; WHDR_BEGINLOOP | WHDR_ENDLOOP
+    mov byte [rbx + 24], 0x0C           ; WHDR_BEGINLOOP | WHDR_ENDLOOP
     or dword [rbx + 28], -1             ; and never stop looping
     mov rsi, qword [wave_out]
 
