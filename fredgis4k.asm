@@ -769,7 +769,7 @@ DemoMain:
     push r12
     push rsi
     push rdi
-    sub rsp, 120
+    sub rsp, 112
 
     rdtsc                               ; a moving seed with no import at all:
     or eax, 1                           ; the planks are torn differently on
