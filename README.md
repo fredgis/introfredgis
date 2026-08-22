@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/fredgis/introfredgis/releases/latest/download/fredgis.exe"><b>⬇ fredgis.exe</b> — 5 120 bytes, everything</a><br>
-  <a href="https://github.com/fredgis/introfredgis/releases/latest/download/fredgis4k.exe"><b>⬇ fredgis4k.exe</b> — 4 096 bytes, no sound, no scroller</a>
+  <a href="https://github.com/fredgis/introfredgis/releases/latest/download/fredgis4k.exe"><b>⬇ fredgis4k.exe</b> — 3 584 bytes, no sound, no scroller</a>
 </p>
 
 <p align="center">
@@ -24,13 +24,13 @@
 
 ## Two builds, one source tree
 
-Both are the same demo. The 4 096 byte one exists because the file size is
+Both are the same demo. The 3 584 byte one exists because the file size is
 quantised in 512 byte blocks, so shrinking the code changes nothing until a
 whole block comes free — the only way down was to give up features.
 
 | | `fredgis.asm` | `fredgis4k.asm` |
 | --- | :---: | :---: |
-| **size** | **5 120 bytes** | **4 096 bytes** |
+| **size** | **5 120 bytes** | **3 584 bytes** |
 | imported symbols | 21, four DLLs | 8, three DLLs |
 | burning plank window, layered alpha | ✅ | ✅ |
 | block logo, Matrix rain, glitch | ✅ | ✅ |
@@ -71,7 +71,7 @@ bitmap, and the music is synthesised sample by sample into a byte array.
 | File | Purpose |
 | --- | --- |
 | `fredgis.asm` | The full demo. ~1 520 lines of NASM, 21 imported symbols. |
-| `fredgis4k.asm` | The same demo stripped to fit 4 096 bytes. |
+| `fredgis4k.asm` | The same demo stripped to fit 3 584 bytes. |
 | `tiny.ld` | Custom linker script that discards every section the linker emits by default and that this program has no use for. |
 | `pecompact.ps1` | Post link step that shrinks the padded PE header block from 512 to 0 wasted bytes. |
 | `build.ps1` | One command, builds both. |
@@ -89,7 +89,7 @@ toolchain, both on `PATH`.
 
 ```
 fredgis.exe      5120 bytes
-fredgis4k.exe    4096 bytes
+fredgis4k.exe    3584 bytes
 ```
 
 Or by hand:
@@ -114,7 +114,7 @@ or build them yourself with the command above.
 
 ```powershell
 .\fredgis.exe        # everything
-.\fredgis4k.exe      # 4096 bytes, no sound and no scroller
+.\fredgis4k.exe      # 3584 bytes, no sound and no scroller
 ```
 
 * **Drag anywhere** to move the window — there is no title bar. *(full build only)*
@@ -692,7 +692,7 @@ tricks do not get you there:
 | drop the high octave from the tune | −16 bytes, **file unchanged** |
 | apply every peephole idiom left | under 100 bytes, **file unchanged** |
 | `rep stosd` block fill and a SIMD premultiply | −32 in `.text`, **file unchanged** |
-| drop music + scroller + drag + window class | −960 in `.text`, −520 in `.idata`, **file 5 120 → 4 096** |
+| drop music + scroller + drag + window class | −1008 in `.text`, −520 in `.idata`, **file 5 120 → 3 584** |
 
 The measured floor for `.idata` is the interesting part. Eleven imports — the
 smallest set that still creates a layered window and blits it — assembles to

@@ -602,7 +602,8 @@ BurnEdges:
     push 2
     pop r13
 .side:
-    xor r12d, r12d
+    push SCR_H
+    pop r12
 .heat:
     imul r15d, r15d, 1103515245         ; inline LCG, no call in these loops
     add r15d, 12345
@@ -612,7 +613,7 @@ BurnEdges:
     sub eax, 63                         ; near unbiased walk: without this the
                                         ; rows all pin to 255 and the fire turns
                                         ; into a flat band instead of tongues
-    movzx edx, byte [r10 + r12]
+    movzx edx, byte [r10 + r12 - 1]
     add edx, eax
     cmp edx, 255                        ; let the tongues reach full heat
     jle .heat_low
@@ -622,10 +623,9 @@ BurnEdges:
     jns .heat_ok
     xor edx, edx
 .heat_ok:
-    mov byte [r10 + r12], dl
-    inc r12d
-    cmp r12d, SCR_H
-    jb .heat
+    mov byte [r10 + r12 - 1], dl
+    dec r12d
+    jnz .heat
 
     ; Smooth the heat along y. Each row walks on its own, so without this the
     ; fire is fine static; diffusing a little every frame builds the vertical
@@ -655,9 +655,10 @@ BurnEdges:
     jnz .smooth_pass
 
     mov rbx, r14
-    xor r12d, r12d
+    push SCR_H
+    pop r12
 .row:
-    movzx eax, byte [r10 + r12]
+    movzx eax, byte [r10 + r12 - 1]
     mov byte [rbx], al                  ; source column, right at the tip
     push 1
     pop rcx
@@ -668,10 +669,11 @@ BurnEdges:
     shr eax, 16
     mov edx, eax
     and edx, 3
-    lea edx, [rdx + r12 - 1]            ; vertical wobble, -1..2
+    lea edx, [rdx + r12 - 2]            ; vertical wobble, -1..2
     cmp edx, SCR_H                      ; unsigned: also catches -1
     jb .y_ok
     mov edx, r12d
+    dec edx
 .y_ok:
     imul edx, edx, FIRE_W
     add edx, ecx
@@ -690,9 +692,8 @@ BurnEdges:
     jb .cell
 
     add rbx, FIRE_W
-    inc r12d
-    cmp r12d, SCR_H
-    jb .row
+    dec r12d
+    jnz .row
 
     add r14, SCR_H * FIRE_W
     add r10, SCR_H

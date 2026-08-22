@@ -141,8 +141,6 @@ dib_head      dd 40                       ; BITMAPINFOHEADER, a pure constant:
               dd 0
 
 section .bss
-window_handle resq 1
-mem_dc        resq 1
 pixels        resq 1                      ; DIB bits, top down, 32 bpp
 rng_seed      resd 1
 frame_counter resd 1
@@ -238,90 +236,6 @@ BuildLogo:
     dec r10d
     jnz .letter
     pop rdi
-    ret
-
-; ----------------------------------------------------------------------------
-; The star rbx points at respawns far away.
-; ----------------------------------------------------------------------------
-ResetStar:
-    push 2
-    pop rcx
-.xy:
-    call NextRand
-    and eax, (STAR_SPREAD * 2 - 1)
-    sub eax, STAR_SPREAD
-    mov dword [rbx + rcx * 4 - 4], eax
-    dec ecx
-    jnz .xy
-    call NextRand
-    movzx eax, al
-    add eax, 384
-    mov dword [rbx + ST_Z], eax
-    ret
-
-; ----------------------------------------------------------------------------
-; Perspective projection of the star rbx points at.
-; ----------------------------------------------------------------------------
-ProjectStar:
-    imul eax, dword [rbx + ST_X], STAR_FOV
-    cdq
-    idiv dword [rbx + ST_Z]
-    add eax, CX
-    mov dword [rbx + ST_SX], eax
-    imul eax, dword [rbx + ST_Y], STAR_FOV
-    cdq
-    idiv dword [rbx + ST_Z]
-    add eax, CY
-    mov dword [rbx + ST_SY], eax
-    ret
-
-; ----------------------------------------------------------------------------
-; Freeze the current position as the tail of the trail.
-; ----------------------------------------------------------------------------
-SyncTrail:
-    mov rax, qword [rbx + ST_SX]
-    mov qword [rbx + ST_PX], rax
-    ret
-
-; ----------------------------------------------------------------------------
-; Scatter the stars and prime the rain columns.
-; ----------------------------------------------------------------------------
-InitField:
-    push r12
-    push rbx
-
-    lea rbx, [stars]
-    mov r12d, STARS
-.stars:
-    call ResetStar
-    call NextRand                       ; spread the depths out
-    and eax, 511
-    add eax, STAR_NEAR + 8
-    mov dword [rbx + ST_Z], eax
-    call ProjectStar
-    call SyncTrail
-    add rbx, ST_N * 4
-    dec r12d
-    jnz .stars
-
-    lea rbx, [rain]
-    push LOGO_COLS
-    pop r12
-.rain:
-    call NextRand
-    and eax, 1023
-    mov dword [rbx + RN_Y], eax
-    call NextRand
-    and eax, 15
-    add eax, 3
-    mov dword [rbx + RN_V], eax
-    add rbx, RN_N * 4
-    dec r12d
-    jnz .rain
-
-    pop rbx
-    pop r12
-    ret
 
 ; ----------------------------------------------------------------------------
 ; Build the static plank silhouette once.
@@ -425,6 +339,78 @@ MakeMask:
     pop r14
     pop r13
     pop r12
+
+; ----------------------------------------------------------------------------
+; Scatter the stars and prime the rain columns.
+; ----------------------------------------------------------------------------
+InitField:
+    lea rbx, [stars]
+    mov r12d, STARS
+.stars:
+    call ResetStar
+    call ProjectStar
+    call SyncTrail
+    add rbx, ST_N * 4
+    dec r12d
+    jnz .stars
+
+    lea rbx, [rain]
+    push LOGO_COLS
+    pop r12
+.rain:
+    call NextRand
+    and eax, 1023
+    mov dword [rbx + RN_Y], eax
+    call NextRand
+    and eax, 15
+    add eax, 3
+    mov dword [rbx + RN_V], eax
+    add rbx, RN_N * 4
+    dec r12d
+    jnz .rain
+    ret
+
+; ----------------------------------------------------------------------------
+; The star rbx points at respawns far away.
+; ----------------------------------------------------------------------------
+ResetStar:
+    push 2
+    pop rcx
+.xy:
+    call NextRand
+    and eax, (STAR_SPREAD * 2 - 1)
+    sub eax, STAR_SPREAD
+    mov dword [rbx + rcx * 4 - 4], eax
+    dec ecx
+    jnz .xy
+    call NextRand
+    movzx eax, al
+    add eax, 384
+    mov dword [rbx + ST_Z], eax
+    ret
+
+; ----------------------------------------------------------------------------
+; Perspective projection of the star rbx points at.
+; ----------------------------------------------------------------------------
+ProjectStar:
+    imul eax, dword [rbx + ST_X], STAR_FOV
+    cdq
+    idiv dword [rbx + ST_Z]
+    add eax, CX
+    mov dword [rbx + ST_SX], eax
+    imul eax, dword [rbx + ST_Y], STAR_FOV
+    cdq
+    idiv dword [rbx + ST_Z]
+    add eax, CY
+    mov dword [rbx + ST_SY], eax
+    ret
+
+; ----------------------------------------------------------------------------
+; Freeze the current position as the tail of the trail.
+; ----------------------------------------------------------------------------
+SyncTrail:
+    mov rax, qword [rbx + ST_SX]
+    mov qword [rbx + ST_PX], rax
     ret
 
 ; ----------------------------------------------------------------------------
@@ -542,7 +528,8 @@ BurnEdges:
     push 2
     pop r13
 .side:
-    xor r12d, r12d
+    push SCR_H
+    pop r12
 .heat:
     imul r15d, r15d, 1103515245         ; inline LCG, no call in these loops
     add r15d, 12345
@@ -552,7 +539,7 @@ BurnEdges:
     sub eax, 63                         ; near unbiased walk: without this the
                                         ; rows all pin to 255 and the fire turns
                                         ; into a flat band instead of tongues
-    movzx edx, byte [r10 + r12]
+    movzx edx, byte [r10 + r12 - 1]
     add edx, eax
     cmp edx, 255                        ; let the tongues reach full heat
     jle .heat_low
@@ -562,10 +549,9 @@ BurnEdges:
     jns .heat_ok
     xor edx, edx
 .heat_ok:
-    mov byte [r10 + r12], dl
-    inc r12d
-    cmp r12d, SCR_H
-    jb .heat
+    mov byte [r10 + r12 - 1], dl
+    dec r12d
+    jnz .heat
 
     ; Smooth the heat along y. Each row walks on its own, so without this the
     ; fire is fine static; diffusing a little every frame builds the vertical
@@ -595,9 +581,10 @@ BurnEdges:
     jnz .smooth_pass
 
     mov rbx, r14
-    xor r12d, r12d
+    push SCR_H
+    pop r12
 .row:
-    movzx eax, byte [r10 + r12]
+    movzx eax, byte [r10 + r12 - 1]
     mov byte [rbx], al                  ; source column, right at the tip
     push 1
     pop rcx
@@ -608,10 +595,11 @@ BurnEdges:
     shr eax, 16
     mov edx, eax
     and edx, 3
-    lea edx, [rdx + r12 - 1]            ; vertical wobble, -1..2
+    lea edx, [rdx + r12 - 2]            ; vertical wobble, -1..2
     cmp edx, SCR_H                      ; unsigned: also catches -1
     jb .y_ok
     mov edx, r12d
+    dec edx
 .y_ok:
     imul edx, edx, FIRE_W
     add edx, ecx
@@ -630,9 +618,8 @@ BurnEdges:
     jb .cell
 
     add rbx, FIRE_W
-    inc r12d
-    cmp r12d, SCR_H
-    jb .row
+    dec r12d
+    jnz .row
 
     add r14, SCR_H * FIRE_W
     add r10, SCR_H
@@ -780,6 +767,7 @@ AlphaPass:
 start:
 DemoMain:
     push r12
+    push rsi
     push rdi
     sub rsp, 120
 
@@ -796,17 +784,16 @@ DemoMain:
     mov dword [rsp + 48], SCR_W
     mov dword [rsp + 56], SCR_H
     mov ecx, WS_EX_LAYERED
-    mov edx, 0x8004                     ; predefined atom for "STATIC" class
-    xor r8d, r8d                        ; so no string in .text and no
-    mov r9d, WS_POPUP_VISIBLE           ; WNDCLASS to register
+    lea rdx, [class_name]
+    xor r8d, r8d
+    mov r9d, WS_POPUP_VISIBLE
     call CreateWindowExA
-    mov qword [window_handle], rax
+    mov rsi, rax
 
     ; ---- back buffer we poke byte by byte, no GDI drawing left at all
     xor ecx, ecx
     call CreateCompatibleDC
     mov r12, rax
-    mov qword [mem_dc], rax
 
     mov rcx, r12
     lea rdx, [dib_head]                 ; a constant, so it lives in .text
@@ -820,8 +807,6 @@ DemoMain:
     call SelectObject
 
     call BuildLogo
-    call MakeMask
-    call InitField
 
     lea rdi, [x_pos]
     mov dword [rdi], PLANK_CORE
@@ -831,7 +816,7 @@ DemoMain:
     mov dword [rdi + 8], eax
     mov dword [rdi + 12], eax
 
-    mov rcx, qword [window_handle]
+    mov rcx, rsi
     push 1
     pop rdx
     push TIMER_MS
@@ -851,9 +836,9 @@ DemoMain:
     test eax, eax
     jle .quit
     mov eax, dword [rsp + 48]           ; MSG.message
-    cmp eax, WM_KEYDOWN
-    je .quit
-    cmp eax, WM_TIMER
+    sub eax, WM_KEYDOWN
+    jz .quit
+    cmp eax, WM_TIMER - WM_KEYDOWN
     jne .message_loop
 
     inc dword [frame_counter]
@@ -928,12 +913,10 @@ DemoMain:
     jnz .star_step
 
 ; ------------------------------------------------------------------ render --
-    push rdi                            ; clear the frame, eight bytes at a time
     mov rdi, qword [pixels]
     xor eax, eax
     mov ecx, SCR_W * SCR_H / 2
     rep stosq
-    pop rdi
 
     lea rbx, [stars]
     mov r12d, STARS
@@ -1061,12 +1044,11 @@ DemoMain:
     call BurnEdges
     call AlphaPass
 
-    mov rcx, qword [window_handle]      ; hand the surface to the compositor
+    mov rcx, rsi                        ; hand the surface to the compositor
     xor edx, edx
     xor r8d, r8d
     lea r9, [ulw_size]
-    mov rax, qword [mem_dc]
-    mov qword [rsp + 32], rax
+    mov qword [rsp + 32], r12
     lea rax, [r9 + 12]
     mov qword [rsp + 40], rax
     mov qword [rsp + 48], r8

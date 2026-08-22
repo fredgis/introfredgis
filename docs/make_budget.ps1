@@ -60,13 +60,13 @@ function Budget($total, $parts, $rows, $sub1, $sub2, $note1, $note2, $used, $fil
 Budget '5 120' `
     @(@{n='headers';b=512;c=$pink}, @{n='.text';b=3584;c=$teal}, @{n='.idata';b=1024;c=$blue}) `
     @(
-        @{n='WndProc      frame loop and import thunks';      b=1047; c=$teal},
+        @{n='WndProc      frame loop and import thunks';      b=1043; c=$teal},
         @{n='DemoMain     window, layered DIB, GDI font';     b=411;  c=$blue},
         @{n='StartMusic   chiptune synthesis and waveOut';    b=396;  c=$pink},
-        @{n='starfield    project, trail, respawn';           b=333;  c=$blue},
         @{n='AlphaPass    premultiplied compositor';          b=338;  c=$teal},
+        @{n='starfield    project, trail, respawn';           b=333;  c=$blue},
+        @{n='BurnEdges    the fire simulation';               b=332;  c=$teal},
         @{n='MakeMask     plank silhouette and smoothstep';   b=287;  c=$pink},
-        @{n='BurnEdges    the fire simulation';               b=333;  c=$teal},
         @{n='data         font, palette, tune, scroll text';  b=257;  c=$amber},
         @{n='logo + rain  block font rasteriser';             b=141;  c=$blue},
         @{n='entry + RNG';                                    b=25;   c=$grey}
@@ -79,21 +79,21 @@ Budget '5 120' `
     (Join-Path $PSScriptRoot 'bytes.png')
 
 # ----------------------------------------------------------------- 4k build
-Budget '4 096' `
-    @(@{n='headers';b=512;c=$pink}, @{n='.text';b=3072;c=$teal}, @{n='.idata';b=512;c=$blue}) `
+Budget '3 584' `
+    @(@{n='headers';b=512;c=$pink}, @{n='.text';b=2560;c=$teal}, @{n='.idata';b=512;c=$blue}) `
     @(
-        @{n='DemoMain     message loop and frame blit';       b=1024; c=$teal},
-        @{n='starfield    project, trail, respawn';           b=333;  c=$pink},
+        @{n='DemoMain     message loop and frame blit';       b=1001; c=$teal},
         @{n='AlphaPass    premultiplied compositor';          b=338;  c=$blue},
-        @{n='MakeMask     plank silhouette and smoothstep';   b=287;  c=$teal},
-        @{n='BurnEdges    the fire simulation';               b=333;  c=$blue},
-        @{n='logo + rain  block font rasteriser';             b=141;  c=$teal},
+        @{n='BurnEdges    the fire simulation';               b=332;  c=$teal},
+        @{n='starfield    project, trail, respawn';           b=311;  c=$pink},
+        @{n='MakeMask     plank silhouette and smoothstep';   b=286;  c=$teal},
+        @{n='logo + rain  block font rasteriser';             b=140;  c=$blue},
         @{n='data         font and palette only';             b=127;  c=$amber},
         @{n='entry + RNG';                                    b=25;   c=$grey}
     ) `
     'the same demo with the music, the scroller and the drag removed' `
     'starfield  .  layered transparency  .  burning edges  .  Matrix rain' `
     'eight imports instead of twenty one, which is what gets .idata under 512.' `
-    '.text holds 2 608 bytes in its 3 072: 464 bytes of headroom left' `
+    '.text holds 2 560 bytes in its 2 560: 0 wasted bytes' `
     'Eight imported symbols across three DLLs. No sound, no scrolling text.' `
     (Join-Path $PSScriptRoot 'bytes4k.png')
