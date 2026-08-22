@@ -60,15 +60,15 @@ function Budget($total, $parts, $rows, $sub1, $sub2, $note1, $note2, $used, $fil
 Budget '5 632' `
     @(@{n='headers';b=512;c=$pink}, @{n='.text';b=4096;c=$teal}, @{n='.idata';b=1024;c=$blue}) `
     @(
-        @{n='DrawFrame    frame loop, all effects sequenced'; b=1133; c=$teal},
-        @{n='DemoMain     window, layered DIB, GDI font';     b=507;  c=$blue},
-        @{n='StartMusic   chiptune synthesis and waveOut';    b=461;  c=$pink},
-        @{n='AlphaPass    premultiplied compositor';          b=366;  c=$teal},
+        @{n='WndProc      frame loop and import thunks';      b=1132; c=$teal},
+        @{n='DemoMain     window, layered DIB, GDI font';     b=499;  c=$blue},
+        @{n='StartMusic   chiptune synthesis and waveOut';    b=455;  c=$pink},
         @{n='starfield    project, trail, respawn';           b=375;  c=$blue},
+        @{n='AlphaPass    premultiplied compositor';          b=366;  c=$teal},
         @{n='MakeMask     plank silhouette and smoothstep';   b=355;  c=$pink},
-        @{n='BurnEdges    the fire simulation';               b=348;  c=$teal},
+        @{n='BurnEdges    the fire simulation';               b=344;  c=$teal},
         @{n='data         font, palette, tune, scroll text';  b=280;  c=$amber},
-        @{n='logo + rain  block font rasteriser';             b=169;  c=$blue},
+        @{n='logo + rain  block font rasteriser';             b=167;  c=$blue},
         @{n='entry + RNG';                                    b=43;   c=$grey}
     ) `
     'Windows x64 executable  .  pure NASM assembly  .  no runtime, no library, no asset' `
@@ -82,19 +82,19 @@ Budget '5 632' `
 Budget '4 096' `
     @(@{n='headers';b=512;c=$pink}, @{n='.text';b=3072;c=$teal}, @{n='.idata';b=512;c=$blue}) `
     @(
-        @{n='DrawFrame    frame loop, all effects sequenced'; b=844; c=$teal},
-        @{n='AlphaPass    premultiplied compositor';          b=366; c=$blue},
+        @{n='DrawFrame    frame loop and import thunks';      b=841; c=$teal},
         @{n='starfield    project, trail, respawn';           b=375; c=$pink},
+        @{n='AlphaPass    premultiplied compositor';          b=366; c=$blue},
         @{n='MakeMask     plank silhouette and smoothstep';   b=355; c=$teal},
         @{n='BurnEdges    the fire simulation';               b=344; c=$blue},
         @{n='DemoMain     window, layered DIB, message loop'; b=322; c=$pink},
-        @{n='data         font and palette only';             b=147; c=$amber},
         @{n='logo + rain  block font rasteriser';             b=167; c=$teal},
+        @{n='data         font and palette only';             b=147; c=$amber},
         @{n='entry + RNG';                                    b=43;  c=$grey}
     ) `
     'the same demo with the music, the scroller and the drag removed' `
     'starfield  .  layered transparency  .  burning edges  .  Matrix rain' `
-    'nine imports instead of twenty one, which is what gets .idata under 512.' `
+    'eight imports instead of twenty one, which is what gets .idata under 512.' `
     '.text holds 2 960 bytes in its 3 072: 112 bytes of headroom left' `
-    'Nine imported symbols across three DLLs. No sound, no scrolling text.' `
+    'Eight imported symbols across three DLLs. No sound, no scrolling text.' `
     (Join-Path $PSScriptRoot 'bytes4k.png')

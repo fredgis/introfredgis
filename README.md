@@ -31,7 +31,7 @@ whole block comes free — the only way down was to give up features.
 | | `fredgis.asm` | `fredgis4k.asm` |
 | --- | :---: | :---: |
 | **size** | **5 632 bytes** | **4 096 bytes** |
-| imported symbols | 21, four DLLs | 9, three DLLs |
+| imported symbols | 21, four DLLs | 8, three DLLs |
 | burning plank window, layered alpha | ✅ | ✅ |
 | block logo, Matrix rain, glitch | ✅ | ✅ |
 | perspective starfield with trails | ✅ | ✅ |
@@ -70,7 +70,7 @@ bitmap, and the music is synthesised sample by sample into a byte array.
 
 | File | Purpose |
 | --- | --- |
-| `fredgis.asm` | The full demo. ~1 450 lines of NASM, 21 imported symbols. |
+| `fredgis.asm` | The full demo. ~1 520 lines of NASM, 21 imported symbols. |
 | `fredgis4k.asm` | The same demo stripped to fit 4 096 bytes. |
 | `tiny.ld` | Custom linker script that discards every section the linker emits by default and that this program has no use for. |
 | `pecompact.ps1` | Post link step that shrinks the padded PE header block from 512 to 0 wasted bytes. |
@@ -151,7 +151,7 @@ flowchart LR
     class D,E d
 ```
 
-There is no engine and no abstraction layer: one source file, one 16 ms loop,
+There is no engine and no abstraction layer: one source file, one 20 ms loop,
 and three tables of bytes that every effect reads from or writes to.
 
 ---
@@ -173,11 +173,11 @@ An irregular outline with *soft* edges cannot be done with a region —
     xor edx, edx
     xor r8d, r8d
     lea r9, [ulw_size]
-    mov rax, qword [rsp + 88]
+    mov rax, qword [mem_dc]
     mov qword [rsp + 32], rax
     lea rax, [ulw_src]
     mov qword [rsp + 40], rax
-    mov qword [rsp + 48], 0
+    mov qword [rsp + 48], r8
     lea rax, [ulw_blend]
     mov qword [rsp + 56], rax
     mov qword [rsp + 64], ULW_ALPHA
@@ -238,9 +238,9 @@ right, independently, so no two ends line up:
 ```nasm
     call NextRand
     and eax, 15
-    imul eax, eax, 4                    ; 10..TIP_MAX: the planks must end at
-    add eax, 10                         ; clearly different depths or the
-    mov r14d, eax                       ; silhouette reads as a rectangle
+    imul eax, eax, 2                    ; 16..TIP_MAX. The spread stays small:
+    add eax, 16                         ; a big one turns the stack into a
+    mov r14d, eax                       ; visible staircase of black steps
 ```
 
 The fade width is the constant `PLANK_FADE = 64`. Making it a power of two
@@ -308,7 +308,8 @@ fine static. Diffusing the heat along y a little every frame builds up the
 correlation that turns static into tongues of different lengths:
 
 ```nasm
-    mov r9d, 2
+    push 2
+    pop r9
 .smooth_pass:
     movzx r8d, byte [r10]               ; previous row, clamped at the top
     xor r12d, r12d
@@ -470,8 +471,9 @@ into `.bss` at startup and then handed to the mixer **on an infinite hardware
 loop**, so the demo spends zero instructions per frame on audio.
 
 ```nasm
-    mov dword [wave_hdr + 24], 0x0C     ; WHDR_BEGINLOOP | WHDR_ENDLOOP
-    mov dword [wave_hdr + 28], -1       ; and never stop looping
+    lea rbx, [wave_hdr]                 ; one base for the whole header
+    mov dword [rbx + 24], 0x0C          ; WHDR_BEGINLOOP | WHDR_ENDLOOP
+    mov dword [rbx + 28], -1            ; and never stop looping
 ```
 
 That trick is what keeps it cheap: no callback, no streaming thread, no double
@@ -562,7 +564,7 @@ second run.
 | Routine | Role |
 | --- | --- |
 | `start` | Entry point, seeds the RNG, calls `DemoMain`, `ExitProcess`. |
-| `NextRand` | 32-bit xorshift. Everything random comes from here. |
+| `NextRand` | 32-bit LCG, high bits only. Everything random comes from here. |
 | `MakeMask` | Per-row alpha mask of the planks; records each tip so the fire knows where to burn. |
 | `SmoothStep` | `3t² − 2t³` in fixed point, the curve that melts the plank ends into the fire. |
 | `BuildLogo` / `DrawBlock` | Block font rasteriser, Matrix rain and glitch blocks. |

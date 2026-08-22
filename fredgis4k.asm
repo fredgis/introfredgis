@@ -906,7 +906,7 @@ DemoMain:
 
     ; The timer posts WM_TIMER into the queue, so the frame can be drawn right
     ; here instead of in a window procedure. That removes RegisterClassA,
-    ; DefWindowProcA and DispatchMessageA, three of the nine imports left.
+    ; DefWindowProcA and DispatchMessageA, and leaves eight imports in all.
 .message_loop:
     lea rcx, [rsp + 192]
     xor edx, edx
