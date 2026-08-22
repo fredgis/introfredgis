@@ -898,9 +898,7 @@ DrawFrame:
     add eax, dword [x_vel]              ; core of the planks
     cmp eax, PLANK_CORE
     jl .x_flip
-    mov ecx, SCR_W - PLANK_CORE
-    sub ecx, LOGO_W
-    cmp eax, ecx
+    cmp eax, SCR_W - PLANK_CORE - LOGO_W
     jle .x_ok
 .x_flip:
     neg dword [x_vel]
@@ -1041,7 +1039,6 @@ DrawFrame:
     mov eax, dword [rbx + RN_Y]
     sar eax, 6                          ; head, in block rows
     sub eax, r13d
-    js .rain_next
     cmp eax, GLYPH_ROWS
     jae .rain_next
     mov ecx, dword [r15 + r12 * 4]
@@ -1083,8 +1080,6 @@ DrawFrame:
     sub r14d, 4
 
     mov ecx, dword [r15 + rbx * 4]      ; skip anything hidden by a letter
-    test r14d, r14d
-    js .glitch_draw
     cmp r14d, GLYPH_ROWS
     jae .glitch_draw
     bt ecx, r14d

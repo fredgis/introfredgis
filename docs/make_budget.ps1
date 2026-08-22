@@ -60,7 +60,7 @@ function Budget($total, $parts, $rows, $sub1, $sub2, $note1, $note2, $used, $fil
 Budget '5 632' `
     @(@{n='headers';b=512;c=$pink}, @{n='.text';b=4096;c=$teal}, @{n='.idata';b=1024;c=$blue}) `
     @(
-        @{n='WndProc      frame loop and import thunks';      b=1076; c=$teal},
+        @{n='WndProc      frame loop and import thunks';      b=1060; c=$teal},
         @{n='DemoMain     window, layered DIB, GDI font';     b=439;  c=$blue},
         @{n='StartMusic   chiptune synthesis and waveOut';    b=396;  c=$pink},
         @{n='starfield    project, trail, respawn';           b=340;  c=$blue},
@@ -74,7 +74,7 @@ Budget '5 632' `
     'Windows x64 executable  .  pure NASM assembly  .  no runtime, no library, no asset' `
     'starfield  .  layered transparency  .  burning edges  .  scroller  .  8 bit chiptune' `
     'every section is rounded up to a 512 byte file alignment block, so the real' `
-    'currency is blocks, not instructions: .text holds 3 648 bytes in its 4 096' `
+    'currency is blocks, not instructions: .text holds 3 632 bytes in its 4 096' `
     '21 imported symbols across four DLLs. The full demo.' `
     (Join-Path $PSScriptRoot 'bytes.png')
 
@@ -82,7 +82,7 @@ Budget '5 632' `
 Budget '4 096' `
     @(@{n='headers';b=512;c=$pink}, @{n='.text';b=3072;c=$teal}, @{n='.idata';b=512;c=$blue}) `
     @(
-        @{n='DrawFrame    frame loop and import thunks';      b=793; c=$teal},
+        @{n='DrawFrame    frame loop and import thunks';      b=777; c=$teal},
         @{n='starfield    project, trail, respawn';           b=340; c=$pink},
         @{n='AlphaPass    premultiplied compositor';          b=350; c=$blue},
         @{n='MakeMask     plank silhouette and smoothstep';   b=289; c=$teal},
@@ -95,6 +95,6 @@ Budget '4 096' `
     'the same demo with the music, the scroller and the drag removed' `
     'starfield  .  layered transparency  .  burning edges  .  Matrix rain' `
     'eight imports instead of twenty one, which is what gets .idata under 512.' `
-    '.text holds 2 704 bytes in its 3 072: 368 bytes of headroom left' `
+    '.text holds 2 688 bytes in its 3 072: 384 bytes of headroom left' `
     'Eight imported symbols across three DLLs. No sound, no scrolling text.' `
     (Join-Path $PSScriptRoot 'bytes4k.png')
