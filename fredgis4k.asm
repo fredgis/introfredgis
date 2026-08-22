@@ -227,19 +227,13 @@ BuildLogo:
 .letter:
     xor r11d, r11d                      ; block row
 .row:
-    mov eax, r10d
-    shl eax, 3
-    add eax, r11d
+    lea eax, [r11 + r10 * 8]
     movzx ecx, byte [r8 + rax]
     xor edx, edx                        ; bit, 0 = leftmost
 .bit:
-    push 7
-    pop rax
-    sub eax, edx
-    bt ecx, eax
+    shl cl, 1
     jnc .next_bit
-    mov eax, r10d
-    imul eax, eax, GLYPH_PITCH
+    lea eax, [r10 + r10 * 8]
     add eax, edx
     bts dword [r9 + rax * 4], r11d
 .next_bit:
@@ -372,14 +366,12 @@ MakeMask:
 .plank:
     call NextRand
     and eax, 15
-    imul eax, eax, 2                    ; 16..TIP_MAX. The spread stays small:
-    add eax, 16                         ; a big one turns the stack into a
+    lea eax, [rax * 2 + 16]             ; 16..TIP_MAX. The spread stays small:
     mov r14d, eax                       ; visible staircase of black steps
 
     call NextRand
     and eax, 15
-    imul eax, eax, 2
-    add eax, 16
+    lea eax, [rax * 2 + 16]
     mov r15d, SCR_W
     sub r15d, eax                       ; where it stops on the right
 
@@ -389,8 +381,6 @@ MakeMask:
 
     mov ebx, r12d                       ; global row index: the tips are stored
     imul ebx, ebx, PLANK_H              ; per row, not per plank
-    mov r9, rsi
-    mov r8, rdi
     push PLANK_H
     pop r11
 .tip:
@@ -398,13 +388,12 @@ MakeMask:
     and eax, 7                          ; wobble each row a few pixels: a tip
     sub eax, 4                           ; that is constant down the plank
     add eax, r14d                       ; draws a ruler straight edge, and a
-    mov dword [r9 + rbx * 4], eax       ; straight edge is what reads as square
+    mov dword [rsi + rbx * 4], eax      ; straight edge is what reads as square
     call NextRand
     and eax, 7
-    sub eax, 4
+    sub eax, 5
     add eax, r15d
-    dec eax
-    mov dword [r8 + rbx * 4], eax
+    mov dword [rdi + rbx * 4], eax
     inc rbx
     dec r11d
     jnz .tip
@@ -585,7 +574,8 @@ BurnEdges:
     mov r15d, dword [rng_seed]
     lea r14, [fire]
     lea r10, [src_heat]
-    xor r13d, r13d
+    push 2
+    pop r13
 .side:
     xor r12d, r12d
 .heat:
@@ -683,9 +673,8 @@ BurnEdges:
 
     add r14, SCR_H * FIRE_W
     add r10, SCR_H
-    inc r13d
-    cmp r13d, 2
-    jb .side
+    dec r13d
+    jnz .side
 
     mov dword [rng_seed], r15d
     pop r15
@@ -723,7 +712,7 @@ AlphaPass:
     xor r12d, r12d                      ; tip_l, so one base covers both
 .row:
     mov r11d, 256                       ; colour scale for this row
-    test r12d, 1
+    test r12b, 1
     jz .scan_ok
     mov r11d, SCANLINE
 .scan_ok:
@@ -989,10 +978,8 @@ DrawFrame:
     mov r12d, STARS
 .star_step:
     call SyncTrail
-    mov eax, dword [rbx + ST_Z]
-    sub eax, STAR_SPEED
-    mov dword [rbx + ST_Z], eax
-    cmp eax, STAR_NEAR
+    sub dword [rbx + ST_Z], STAR_SPEED
+    cmp dword [rbx + ST_Z], STAR_NEAR
     jle .star_reset
 
     call ProjectStar
@@ -1031,11 +1018,7 @@ DrawFrame:
     push 40
     pop rdx
 .lum_ok:
-    mov eax, edx                        ; white stars: R = G = B
-    shl eax, 8
-    or edx, eax
-    shl eax, 8
-    or edx, eax
+    imul edx, edx, 0x010101             ; white stars: R = G = B
     mov r14d, edx                       ; the colour is needed twice
 
     mov ecx, dword [rbx + ST_SX]        ; head, then tail
@@ -1130,11 +1113,9 @@ DrawFrame:
     div ecx                             ; edx = block column
     mov r15d, edx
 
-    mov eax, r14d                       ; block row, may sit outside the word
-    shr eax, 21
-    and eax, 15
-    sub eax, 4
-    mov r14d, eax
+    shr r14d, 21                        ; block row, may sit outside the word
+    and r14d, 15
+    sub r14d, 4
 
     lea rcx, [colbits]                  ; skip anything hidden by a letter
     mov ecx, dword [rcx + r15 * 4]
@@ -1163,10 +1144,10 @@ DrawFrame:
     lea r9, [ulw_size]
     mov rax, qword [mem_dc]
     mov qword [rsp + 32], rax
-    lea rax, [ulw_src]
+    lea rax, [r9 + 8]
     mov qword [rsp + 40], rax
     mov qword [rsp + 48], r8
-    lea rax, [ulw_blend]
+    lea rax, [r9 + 16]
     mov qword [rsp + 56], rax
     mov qword [rsp + 64], ULW_ALPHA
     call UpdateLayeredWindow

@@ -60,21 +60,21 @@ function Budget($total, $parts, $rows, $sub1, $sub2, $note1, $note2, $used, $fil
 Budget '5 632' `
     @(@{n='headers';b=512;c=$pink}, @{n='.text';b=4096;c=$teal}, @{n='.idata';b=1024;c=$blue}) `
     @(
-        @{n='WndProc      frame loop and import thunks';      b=1114; c=$teal},
-        @{n='DemoMain     window, layered DIB, GDI font';     b=482;  c=$blue},
-        @{n='StartMusic   chiptune synthesis and waveOut';    b=440;  c=$pink},
-        @{n='starfield    project, trail, respawn';           b=361;  c=$blue},
-        @{n='AlphaPass    premultiplied compositor';          b=366;  c=$teal},
-        @{n='MakeMask     plank silhouette and smoothstep';   b=330;  c=$pink},
-        @{n='BurnEdges    the fire simulation';               b=339;  c=$teal},
+        @{n='WndProc      frame loop and import thunks';      b=1101; c=$teal},
+        @{n='DemoMain     window, layered DIB, GDI font';     b=478;  c=$blue},
+        @{n='StartMusic   chiptune synthesis and waveOut';    b=432;  c=$pink},
+        @{n='starfield    project, trail, respawn';           b=359;  c=$blue},
+        @{n='AlphaPass    premultiplied compositor';          b=363;  c=$teal},
+        @{n='MakeMask     plank silhouette and smoothstep';   b=312;  c=$pink},
+        @{n='BurnEdges    the fire simulation';               b=336;  c=$teal},
         @{n='data         font, palette, tune, scroll text';  b=280;  c=$amber},
-        @{n='logo + rain  block font rasteriser';             b=165;  c=$blue},
+        @{n='logo + rain  block font rasteriser';             b=152;  c=$blue},
         @{n='entry + RNG';                                    b=43;   c=$grey}
     ) `
     'Windows x64 executable  .  pure NASM assembly  .  no runtime, no library, no asset' `
     'starfield  .  layered transparency  .  burning edges  .  scroller  .  8 bit chiptune' `
     'every section is rounded up to a 512 byte file alignment block, so the real' `
-    'currency is blocks, not instructions: .text holds 3 920 bytes in its 4 096' `
+    'currency is blocks, not instructions: .text holds 3 856 bytes in its 4 096' `
     '21 imported symbols across four DLLs. The full demo.' `
     (Join-Path $PSScriptRoot 'bytes.png')
 
@@ -82,19 +82,19 @@ Budget '5 632' `
 Budget '4 096' `
     @(@{n='headers';b=512;c=$pink}, @{n='.text';b=3072;c=$teal}, @{n='.idata';b=512;c=$blue}) `
     @(
-        @{n='DrawFrame    frame loop and import thunks';      b=845; c=$teal},
-        @{n='starfield    project, trail, respawn';           b=361; c=$pink},
-        @{n='AlphaPass    premultiplied compositor';          b=366; c=$blue},
-        @{n='MakeMask     plank silhouette and smoothstep';   b=330; c=$teal},
-        @{n='BurnEdges    the fire simulation';               b=339; c=$blue},
-        @{n='DemoMain     window, layered DIB, message loop'; b=316; c=$pink},
-        @{n='logo + rain  block font rasteriser';             b=165; c=$teal},
+        @{n='DrawFrame    frame loop and import thunks';      b=822; c=$teal},
+        @{n='starfield    project, trail, respawn';           b=359; c=$pink},
+        @{n='AlphaPass    premultiplied compositor';          b=363; c=$blue},
+        @{n='MakeMask     plank silhouette and smoothstep';   b=312; c=$teal},
+        @{n='BurnEdges    the fire simulation';               b=336; c=$blue},
+        @{n='DemoMain     window, layered DIB, message loop'; b=314; c=$pink},
+        @{n='logo + rain  block font rasteriser';             b=152; c=$teal},
         @{n='data         font and palette only';             b=147; c=$amber},
         @{n='entry + RNG';                                    b=43;  c=$grey}
     ) `
     'the same demo with the music, the scroller and the drag removed' `
     'starfield  .  layered transparency  .  burning edges  .  Matrix rain' `
     'eight imports instead of twenty one, which is what gets .idata under 512.' `
-    '.text holds 2 912 bytes in its 3 072: 160 bytes of headroom left' `
+    '.text holds 2 848 bytes in its 3 072: 224 bytes of headroom left' `
     'Eight imported symbols across three DLLs. No sound, no scrolling text.' `
     (Join-Path $PSScriptRoot 'bytes4k.png')
