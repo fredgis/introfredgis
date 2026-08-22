@@ -260,8 +260,8 @@ DrawBlock:
     ret
 
 ; ----------------------------------------------------------------------------
-; Expand the block font into one row bitmask per logo column, so drawing only
-; ever needs a bit test.
+; Expand the block font into one row bitmask per logo column, then build the
+; mask, scatter the stars and render the chiptune in one continuous pipeline.
 ; ----------------------------------------------------------------------------
 BuildLogo:
     push rdi
@@ -347,7 +347,6 @@ SyncTrail:
 InitField:
     push r12
     push rbx
-    sub rsp, 40
 
     lea rbx, [stars]
     mov r12d, STARS
@@ -378,21 +377,12 @@ InitField:
     dec r12d
     jnz .rain
 
-    add rsp, 40
     pop rbx
     pop r12
     ret
 
 ; ----------------------------------------------------------------------------
 ; Build the static plank silhouette once.
-;
-; The planks are stacked edge to edge with no seam between them, so the only
-; thing that shapes the window is where each slab stops on the left and on the
-; right. A plank that stops early gets a long fade, one that reaches far out
-; gets a short one, which keeps the opaque core exactly PLANK_CORE pixels wide
-; on both sides while the visible tips land all over the place.
-;
-; Frame: rsp+32..63 scratch, only there as shadow space for the calls
 ; ----------------------------------------------------------------------------
 MakeMask:
     push r12
@@ -402,7 +392,6 @@ MakeMask:
     push rbx
     push rsi
     push rdi
-    sub rsp, 32
 
     lea r13, [mask]
     mov r10, r13
@@ -489,7 +478,6 @@ MakeMask:
     cmp r12d, NPLANK
     jb .plank
 
-    add rsp, 32
     pop rdi
     pop rsi
     pop rbx
@@ -498,6 +486,9 @@ MakeMask:
     pop r13
     pop r12
     ret
+
+; ----------------------------------------------------------------------------
+; Smoothstep, 3t^2 - 2t^3, in fixed point.
 
 ; ----------------------------------------------------------------------------
 ; Smoothstep, 3t^2 - 2t^3, in fixed point.
@@ -554,9 +545,7 @@ DrawTrail:
     neg ecx
 .abs_dy:
     cmp ecx, eax
-    jle .have_n
-    mov eax, ecx
-.have_n:
+    cmovg eax, ecx
     mov r9d, eax
     test r9d, r9d
     jz .plot                            ; head and tail on the same pixel
