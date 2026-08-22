@@ -876,7 +876,7 @@ DrawFrame:
     push r14
     push r15
     push rbx
-    sub rsp, 88
+    sub rsp, 96
 
     inc dword [frame_counter]
 
@@ -1097,7 +1097,7 @@ DrawFrame:
     mov dword [rsp + 64], ULW_ALPHA
     call UpdateLayeredWindow
 
-    add rsp, 88
+    add rsp, 96
     pop rbx
     pop r15
     pop r14

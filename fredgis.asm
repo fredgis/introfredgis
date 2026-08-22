@@ -1134,7 +1134,7 @@ WndProc:
     push r14
     push r15
     push rbx
-    sub rsp, 88
+    sub rsp, 96
 
     mov qword [rsp + 80], rcx
 
@@ -1409,7 +1409,7 @@ WndProc:
     xor eax, eax
 
 .done:
-    add rsp, 88
+    add rsp, 96
     pop rbx
     pop r15
     pop r14
