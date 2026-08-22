@@ -281,19 +281,18 @@ BuildLogo:
     pop rcx
     rep stosd
 
-    xor r10d, r10d                      ; letter index
+    push 7
+    pop r10                             ; 7 letters
 .letter:
     xor r11d, r11d                      ; block row
 .row:
-    lea eax, [r11 + r10 * 8]
-    movzx ecx, byte [r8 + rax]
+    movzx ecx, byte [r8]
+    inc r8
     xor edx, edx                        ; bit, 0 = leftmost
 .bit:
     shl cl, 1
     jnc .next_bit
-    lea eax, [r10 + r10 * 8]
-    add eax, edx
-    bts dword [r9 + rax * 4], r11d
+    bts dword [r9 + rdx * 4], r11d
 .next_bit:
     inc edx
     cmp edx, 8
@@ -301,9 +300,9 @@ BuildLogo:
     inc r11d
     cmp r11d, GLYPH_ROWS
     jb .row
-    inc r10d
-    cmp r10d, 7
-    jb .letter
+    add r9, GLYPH_PITCH * 4
+    dec r10d
+    jnz .letter
     pop rdi
     ret
 
@@ -321,7 +320,7 @@ ResetStar:
     dec ecx
     jnz .xy
     call NextRand
-    and eax, 255
+    movzx eax, al
     add eax, 384
     mov dword [rbx + ST_Z], eax
     ret
@@ -348,10 +347,8 @@ ProjectStar:
 ; Freeze the current position as the tail of the trail.
 ; ----------------------------------------------------------------------------
 SyncTrail:
-    mov eax, dword [rbx + ST_SX]
-    mov dword [rbx + ST_PX], eax
-    mov eax, dword [rbx + ST_SY]
-    mov dword [rbx + ST_PY], eax
+    mov rax, qword [rbx + ST_SX]
+    mov qword [rbx + ST_PX], rax
     ret
 
 ; ----------------------------------------------------------------------------
@@ -418,9 +415,11 @@ MakeMask:
     sub rsp, 32
 
     lea r13, [mask]
+    mov r10, r13
     lea rsi, [tip_l]
     lea rdi, [tip_r]
     xor r12d, r12d
+    xor ebx, ebx
 .plank:
     call NextRand
     and eax, 15
@@ -433,12 +432,6 @@ MakeMask:
     mov r15d, SCR_W
     sub r15d, eax                       ; where it stops on the right
 
-    mov eax, r12d
-    imul eax, eax, PLANK_H * SCR_W
-    lea r10, [r13 + rax]                ; first row of this plank
-
-    mov ebx, r12d                       ; global row index: the tips are stored
-    imul ebx, ebx, PLANK_H              ; per row, not per plank
     push PLANK_H
     pop r11
 .tip:
@@ -687,11 +680,9 @@ BurnEdges:
     dec r9d
     jnz .smooth_pass
 
+    mov rbx, r14
     xor r12d, r12d
 .row:
-    mov eax, r12d
-    imul eax, eax, FIRE_W
-    lea rbx, [r14 + rax]
     movzx eax, byte [r10 + r12]
     mov byte [rbx], al                  ; source column, right at the tip
     push 1
@@ -725,6 +716,7 @@ BurnEdges:
     cmp ecx, FIRE_W
     jb .cell
 
+    add rbx, FIRE_W
     inc r12d
     cmp r12d, SCR_H
     jb .row
@@ -832,10 +824,9 @@ AlphaPass:
     mov eax, r10d                       ; one path for every pixel: coverage 0
     imul eax, r11d                      ; premultiplies to a transparent black
     shr eax, 8                          ; and coverage 255 to the pixel itself,
-    mov edx, dword [r14 + rcx * 4]      ; so the two shortcuts they used to have
-    movd xmm1, eax                      ; were pure code size
+    movd xmm1, eax                      ; so the two shortcuts they used to have
     pshuflw xmm1, xmm1, 0x40            ; the factor spread over words 0..2 and
-    movd xmm0, edx                      ; left at zero in word 3, so the source
+    movd xmm0, dword [r14 + rcx * 4]    ; left at zero in word 3, so the source
     pxor xmm2, xmm2                     ; alpha byte cannot survive the multiply
     punpcklbw xmm0, xmm2                ; and the OR below still owns it
     pmullw xmm0, xmm1
@@ -990,14 +981,6 @@ StartMusic:
 .no_hat:
 
     add esi, 128                        ; 8 bit PCM is unsigned, silence is 128
-    test esi, esi
-    jns .lo_ok
-    xor esi, esi
-.lo_ok:
-    cmp esi, 255
-    jle .hi_ok
-    mov esi, 255
-.hi_ok:
     mov byte [rdi], sil
     inc rdi
     inc r10d
@@ -1114,7 +1097,6 @@ DemoMain:
     call SetBkMode
 
     ; ---- the only system font left, and it never changes afterwards
-    sub rsp, 128
     lea rdi, [rsp + 40]                 ; everything but weight and face name
     xor eax, eax
     push 8
@@ -1128,7 +1110,6 @@ DemoMain:
     xor r8d, r8d
     xor r9d, r9d
     call CreateFontA
-    add rsp, 128
     mov rcx, r12
     mov rdx, rax
     call SelectObject
@@ -1372,7 +1353,7 @@ WndProc:
     mov r13d, dword [r15 + r12 * 4]
     xor r14d, r14d
 .logo_row:
-    bt r13d, r14d
+    shr r13d, 1
     jnc .logo_next
     mov ecx, r12d
     mov edx, r14d
@@ -1398,8 +1379,7 @@ WndProc:
     js .rain_next
     cmp eax, GLYPH_ROWS
     jae .rain_next
-    lea rcx, [colbits]
-    mov ecx, dword [rcx + r12 * 4]
+    mov ecx, dword [r15 + r12 * 4]
     bt ecx, eax
     jnc .rain_next
 
@@ -1432,14 +1412,13 @@ WndProc:
     push LOGO_COLS
     pop rcx
     div ecx                             ; edx = block column
-    mov r15d, edx
+    mov ebx, edx
 
     shr r14d, 21                        ; block row, may sit outside the word
     and r14d, 15
     sub r14d, 4
 
-    lea rcx, [colbits]                  ; skip anything hidden by a letter
-    mov ecx, dword [rcx + r15 * 4]
+    mov ecx, dword [r15 + rbx * 4]      ; skip anything hidden by a letter
     test r14d, r14d
     js .glitch_draw
     cmp r14d, GLYPH_ROWS
@@ -1447,7 +1426,7 @@ WndProc:
     bt ecx, r14d
     jc .glitch_next
 .glitch_draw:
-    mov ecx, r15d
+    mov ecx, ebx
     mov edx, r14d
     mov r8d, 0x00186A2A
     call DrawBlock
