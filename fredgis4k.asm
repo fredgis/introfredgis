@@ -358,13 +358,11 @@ MakeMask:
 .tip:
     call NextRand
     and eax, 7                          ; wobble each row a few pixels: a tip
-    sub eax, 4                           ; that is constant down the plank
-    add eax, r14d                       ; draws a ruler straight edge, and a
+    lea eax, [rax + r14 - 4]            ; draws a ruler straight edge, and a
     mov dword [rsi + rbx * 4], eax      ; straight edge is what reads as square
     call NextRand
     and eax, 7
-    sub eax, 5
-    add eax, r15d
+    lea eax, [rax + r15 - 5]
     mov dword [rdi + rbx * 4], eax
     inc rbx
     dec r11d
@@ -610,8 +608,7 @@ BurnEdges:
     shr eax, 16
     mov edx, eax
     and edx, 3
-    dec edx                             ; vertical wobble, -1..2
-    add edx, r12d
+    lea edx, [rdx + r12 - 1]            ; vertical wobble, -1..2
     cmp edx, SCR_H                      ; unsigned: also catches -1
     jb .y_ok
     mov edx, r12d
@@ -860,23 +857,6 @@ DemoMain:
     je .quit
     cmp eax, WM_TIMER
     jne .message_loop
-    call DrawFrame
-    jmp .message_loop
-
-.quit:
-    xor ecx, ecx
-    call ExitProcess
-
-; ----------------------------------------------------------------------------
-; rcx = hwnd, edx = message, r8 = wParam, r9 = lParam
-; ----------------------------------------------------------------------------
-DrawFrame:
-    push r12
-    push r13
-    push r14
-    push r15
-    push rbx
-    sub rsp, 96
 
     inc dword [frame_counter]
 
@@ -1019,6 +999,8 @@ DrawFrame:
     ; then the Matrix drops, one colour per depth in the trail
     xor r13d, r13d
 .rain_depth:
+    lea rax, [level_col]
+    mov r8d, dword [rax + r13 * 4]
     lea rbx, [rain]
     xor r12d, r12d
 .rain_col:
@@ -1033,8 +1015,6 @@ DrawFrame:
 
     mov edx, eax
     mov ecx, r12d
-    lea rax, [level_col]
-    mov r8d, dword [rax + r13 * 4]
     call DrawBlock
 .rain_next:
     add rbx, RN_N * 4
@@ -1096,11 +1076,8 @@ DrawFrame:
     mov qword [rsp + 56], rax
     mov dword [rsp + 64], ULW_ALPHA
     call UpdateLayeredWindow
+    jmp .message_loop
 
-    add rsp, 96
-    pop rbx
-    pop r15
-    pop r14
-    pop r13
-    pop r12
-    ret
+.quit:
+    xor ecx, ecx
+    call ExitProcess

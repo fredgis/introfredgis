@@ -692,7 +692,7 @@ tricks do not get you there:
 | drop the high octave from the tune | −16 bytes, **file unchanged** |
 | apply every peephole idiom left | under 100 bytes, **file unchanged** |
 | `rep stosd` block fill and a SIMD premultiply | −32 in `.text`, **file unchanged** |
-| drop music + scroller + drag + window class | −928 in `.text`, −520 in `.idata`, **file 5 120 → 4 096** |
+| drop music + scroller + drag + window class | −960 in `.text`, −520 in `.idata`, **file 5 120 → 4 096** |
 
 The measured floor for `.idata` is the interesting part. Eleven imports — the
 smallest set that still creates a layered window and blits it — assembles to
