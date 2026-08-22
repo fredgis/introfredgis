@@ -202,25 +202,21 @@ and it must run *after* `GdiFlush`, because GDI batches its calls and would
 otherwise stomp on pixels we already composited.
 
 **Alpha must be premultiplied.** `UpdateLayeredWindow` with `ULW_ALPHA` expects
-`channel = channel * a >> 8`:
+`channel = channel * a >> 8`. The three channels scale by the same factor, so
+they widen to words and go through a single `pmullw` rather than three
+`imul`/`shr` pairs and a shift-and-`or` reassembly:
 
 ```nasm
     mov edx, dword [r14 + rcx * 4]      ; premultiply the three channels
-    movzx r8d, dl
-    imul r8d, eax
-    shr r8d, 8
-    shr edx, 8
-    movzx r9d, dl
-    imul r9d, eax
-    shr r9d, 8
-    shr edx, 8
-    movzx edx, dl
-    imul edx, eax
-    shr edx, 8
-    shl edx, 16
-    shl r9d, 8
-    or edx, r9d
-    or edx, r8d
+    movd xmm1, eax
+    pshuflw xmm1, xmm1, 0x40            ; the factor spread over words 0..2 and
+    movd xmm0, edx                      ; left at zero in word 3, so the source
+    pxor xmm2, xmm2                     ; alpha byte cannot survive the multiply
+    punpcklbw xmm0, xmm2                ; and the OR below still owns it
+    pmullw xmm0, xmm1
+    psrlw xmm0, 8
+    packuswb xmm0, xmm0
+    movd edx, xmm0
     shl r10d, 24                        ; alpha keeps the untouched coverage
     or edx, r10d
     mov dword [r14 + rcx * 4], edx
@@ -592,7 +588,7 @@ alignment, so the real currency is *blocks*, not instructions:
 
 ```
 headers   0x0200                        (448 of 512 used)
-.text     0x0FE0  →  0x1000             (4064 of 4096 used)
+.text     0x0FB0  →  0x1000             (4016 of 4096 used)
 .idata    0x03DC  →  0x0400             ( 988 of 1024 used)
                      ------
                      0x1600  =  5632
@@ -682,7 +678,7 @@ linkers emit 0x200 to begin with.
 
 ## Where it stops
 
-`.text` holds 4 048 bytes in a 4 096 block and `.idata` 988 in a 1 024 block.
+`.text` holds 4 016 bytes in a 4 096 block and `.idata` 988 in a 1 024 block.
 Because the file is quantised in 512 byte steps, **shaving another twenty or
 fifty bytes changes nothing at all** — the next gain needs a whole block.
 
@@ -694,6 +690,7 @@ tricks do not get you there:
 | shorten the scroll text to nothing | −55 bytes, **file unchanged** |
 | drop the high octave from the tune | −16 bytes, **file unchanged** |
 | apply every peephole idiom left | under 100 bytes, **file unchanged** |
+| `rep stosd` block fill and a SIMD premultiply | −32 in `.text`, **file unchanged** |
 | drop music + scroller + drag + window class | −992 in `.text`, −520 in `.idata`, **file 5 632 → 4 096** |
 
 The measured floor for `.idata` is the interesting part. Eleven imports — the
