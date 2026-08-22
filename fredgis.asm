@@ -221,12 +221,6 @@ section .text
 global start
 global WndProc
 
-start:
-    sub rsp, 40
-    call DemoMain
-    mov ecx, eax
-    call ExitProcess
-
 ; ----------------------------------------------------------------------------
 ; Linear congruential generator -> eax
 ; ----------------------------------------------------------------------------
@@ -240,7 +234,7 @@ NextRand:
 
 ; ----------------------------------------------------------------------------
 ; Fill a SCALE by SCALE block straight into the DIB.
-; ecx = x, edx = y, r8d = 0x00RRGGBB. Clobbers rax and r10 only.
+; ecx = x, edx = y, r8d = 0x00RRGGBB. Clobbers rax and rdx only.
 ; ----------------------------------------------------------------------------
 DrawBlock:
     imul ecx, ecx, SCALE                ; block coordinates, scaled and offset
@@ -256,13 +250,13 @@ DrawBlock:
     add rdi, rax                        ; it is one rep stosd. That leaves rdi
     mov eax, r8d                        ; on the pixel after the block, and the
     push SCALE                          ; step to the next row is only the rest
-    pop r10                             ; of the scanline
+    pop rdx                             ; of the scanline
 .row:
     push SCALE
     pop rcx
     rep stosd
     add rdi, (SCR_W - SCALE) * 4
-    dec r10d
+    dec edx
     jnz .row
     pop rdi
     ret
@@ -813,9 +807,7 @@ AlphaPass:
     lea r8d, [rax + rax * 2]            ; B = 3f/4
     shr r8d, 2
     or edx, r8d
-    mov r8d, eax                        ; G = f
-    shl r8d, 8
-    or edx, r8d
+    mov dh, al                          ; G = f
     movd xmm0, dword [r14 + rcx * 4]    ; saturating add over all channels
     movd xmm1, edx
     paddusb xmm0, xmm1
@@ -1033,6 +1025,7 @@ StartMusic:
     ret
 
 ; ----------------------------------------------------------------------------
+start:
 DemoMain:
     push r12
     push rdi
@@ -1122,11 +1115,14 @@ DemoMain:
     call InitField
     call StartMusic
 
-    mov dword [x_pos], PLANK_CORE
-    mov dword [y_pos], 60
-    mov dword [x_vel], 1
-    mov dword [y_vel], 1
-    mov dword [scroll_x], SCR_W
+    lea rdi, [x_pos]
+    mov dword [rdi], PLANK_CORE
+    mov dword [rdi + 4], 60
+    push 1
+    pop rax
+    mov dword [rdi + 8], eax
+    mov dword [rdi + 12], eax
+    mov dword [rdi + 16], SCR_W
 
     mov rcx, qword [window_handle]
     push 1
@@ -1149,11 +1145,8 @@ DemoMain:
     jmp .message_loop
 
 .quit:
-    xor eax, eax
-    add rsp, 328
-    pop rdi
-    pop r12
-    ret
+    xor ecx, ecx
+    call ExitProcess
 
 ; ----------------------------------------------------------------------------
 ; rcx = hwnd, edx = message, r8 = wParam, r9 = lParam
