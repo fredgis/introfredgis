@@ -199,9 +199,6 @@ mem_dc        resq 1
 pixels        resq 1                      ; DIB bits, top down, 32 bpp
 rng_seed      resd 1
 frame_counter resd 1
-scroll_w      resd 1
-box_x0        resd 1                      ; area the logo may wander in
-box_x1        resd 1
 x_pos         resd 1
 y_pos         resd 1
 x_vel         resd 1
@@ -280,7 +277,8 @@ BuildLogo:
     lea r9, [colbits]
     mov rdi, r9
     xor eax, eax
-    mov ecx, LOGO_COLS
+    push LOGO_COLS
+    pop rcx
     rep stosd
 
     xor r10d, r10d                      ; letter index
@@ -319,14 +317,15 @@ BuildLogo:
 ; The star rbx points at respawns far away.
 ; ----------------------------------------------------------------------------
 ResetStar:
+    push 2
+    pop rcx
+.xy:
     call NextRand
     and eax, (STAR_SPREAD * 2 - 1)
     sub eax, STAR_SPREAD
-    mov dword [rbx + ST_X], eax
-    call NextRand
-    and eax, (STAR_SPREAD * 2 - 1)
-    sub eax, STAR_SPREAD
-    mov dword [rbx + ST_Y], eax
+    mov dword [rbx + rcx * 4 - 4], eax
+    dec ecx
+    jnz .xy
     call NextRand
     and eax, 255
     add eax, 384
@@ -365,11 +364,9 @@ SyncTrail:
 ; Scatter the stars and prime the rain columns.
 ; ----------------------------------------------------------------------------
 InitField:
-    push rbp
-    mov rbp, rsp
     push r12
     push rbx
-    sub rsp, 32
+    sub rsp, 40
 
     lea rbx, [stars]
     mov r12d, STARS
@@ -399,10 +396,9 @@ InitField:
     dec r12d
     jnz .rain
 
-    add rsp, 32
+    add rsp, 40
     pop rbx
     pop r12
-    pop rbp
     ret
 
 ; ----------------------------------------------------------------------------
@@ -417,8 +413,6 @@ InitField:
 ; Frame: rsp+32..63 scratch, only there as shadow space for the calls
 ; ----------------------------------------------------------------------------
 MakeMask:
-    push rbp
-    mov rbp, rsp
     push r12
     push r13
     push r14
@@ -426,7 +420,7 @@ MakeMask:
     push rbx
     push rsi
     push rdi
-    sub rsp, 40
+    sub rsp, 32
 
     lea r13, [mask]
     lea rsi, [tip_l]
@@ -520,10 +514,7 @@ MakeMask:
     cmp r12d, NPLANK
     jb .plank
 
-    mov dword [box_x0], PLANK_CORE
-    mov dword [box_x1], SCR_W - PLANK_CORE
-
-    add rsp, 40
+    add rsp, 32
     pop rdi
     pop rsi
     pop rbx
@@ -531,7 +522,6 @@ MakeMask:
     pop r14
     pop r13
     pop r12
-    pop rbp
     ret
 
 ; ----------------------------------------------------------------------------
@@ -641,8 +631,6 @@ DrawTrail:
 ; Layout is fire[side][y][d], d counted outwards from the tip.
 ; ----------------------------------------------------------------------------
 BurnEdges:
-    push rbp
-    mov rbp, rsp
     push rbx
     push r12
     push r13
@@ -760,7 +748,6 @@ BurnEdges:
     pop r13
     pop r12
     pop rbx
-    pop rbp
     ret
 
 ; ----------------------------------------------------------------------------
@@ -904,8 +891,7 @@ AlphaPass:
 NoteIncr:
     mov eax, ecx
     and eax, 15                         ; semitone picks the table entry,
-    lea rdx, [note_incr]                ; octave is a shift: doubling the
-    movzx ebx, word [rdx + rax * 2]     ; frequency is doubling the increment
+    movzx ebx, word [rbp + rax * 2 + (note_incr - arp_tab)]
     shr ecx, 4
     shl ebx, cl
     ret
@@ -958,8 +944,7 @@ StartMusic:
     jz .arp_up                          ; walk back down on the low half
     xor eax, 3
 .arp_up:
-    lea rdx, [r9 * 4]
-    add rax, rdx
+    lea eax, [rax + r9 * 4]
     movzx ecx, byte [rbp + rax]
     movsx edx, byte [rbp + r8 + (part_lead - arp_tab)]
     add ecx, edx
@@ -979,8 +964,8 @@ StartMusic:
     add r14d, r13d                      ; 50% square, the fat one
     mov ecx, r8d
     shr ecx, 3
-    test r14d, 0x8000
-    jnz .bass_hi
+    bt r14d, 15
+    jc .bass_hi
     neg ecx
 .bass_hi:
     mov esi, ecx
@@ -1075,11 +1060,9 @@ StartMusic:
 
 ; ----------------------------------------------------------------------------
 DemoMain:
-    push rbp
-    mov rbp, rsp
     push r12
     push rdi
-    sub rsp, 320
+    sub rsp, 328
 
     rdtsc                               ; a moving seed with no import at all:
     or eax, 1                           ; the planks are torn differently on
@@ -1161,15 +1144,12 @@ DemoMain:
     mov edx, 0x0040E060
     call SetTextColor
 
-    mov dword [scroll_w], scroll_len * SCROLL_CW
-
     call BuildLogo
     call MakeMask
     call InitField
     call StartMusic
 
-    mov eax, dword [box_x0]
-    mov dword [x_pos], eax
+    mov dword [x_pos], PLANK_CORE
     mov dword [y_pos], 60
     mov dword [x_vel], 1
     mov dword [y_vel], 1
@@ -1196,10 +1176,9 @@ DemoMain:
 
 .quit:
     xor eax, eax
-    add rsp, 320
+    add rsp, 328
     pop rdi
     pop r12
-    pop rbp
     ret
 
 ; ----------------------------------------------------------------------------
@@ -1215,14 +1194,12 @@ DemoMain:
 ;   rsp+120/124   tail of the star trail
 ; ----------------------------------------------------------------------------
 WndProc:
-    push rbp
-    mov rbp, rsp
     push r12
     push r13
     push r14
     push r15
     push rbx
-    sub rsp, 184
+    sub rsp, 176
 
     mov qword [rsp + 80], rcx
 
@@ -1259,7 +1236,7 @@ WndProc:
 
     mov eax, dword [scroll_x]
     sub eax, SCROLL_SPEED
-    mov ecx, dword [scroll_w]
+    mov ecx, scroll_len * SCROLL_CW
     neg ecx
     cmp eax, ecx
     jg .scroll_ok
@@ -1269,9 +1246,9 @@ WndProc:
 
     mov eax, dword [x_pos]              ; the word bounces inside the solid
     add eax, dword [x_vel]              ; core of the planks
-    cmp eax, dword [box_x0]
+    cmp eax, PLANK_CORE
     jl .x_flip
-    mov ecx, dword [box_x1]
+    mov ecx, SCR_W - PLANK_CORE
     sub ecx, LOGO_W
     cmp eax, ecx
     jle .x_ok
@@ -1512,11 +1489,10 @@ WndProc:
     xor eax, eax
 
 .done:
-    add rsp, 184
+    add rsp, 176
     pop rbx
     pop r15
     pop r14
     pop r13
     pop r12
-    pop rbp
     ret
