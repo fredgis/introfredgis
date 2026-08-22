@@ -131,11 +131,11 @@ all seeded from `rdtsc`.
 
 ```mermaid
 flowchart LR
-    A["<b>start</b><br/>BuildLogo · MakeMask<br/>InitField · StartMusic<br/>CreateDIBSection"]
-    B["<b>DemoMain</b> — 20 ms tick<br/>clear → TextOutA → GdiFlush<br/>→ stars → logo+rain<br/>→ BurnEdges → AlphaPass"]
-    C["<b>.bss</b><br/>mask · tip_l/tip_r<br/>fire · colbits · stars · audio"]
-    D["UpdateLayeredWindow"]
-    E["waveOut<br/>hardware loop"]
+    A["<b>Startup & Init</b><br/>BuildLogo · MakeMask<br/>InitField · StartMusic<br/>CreateDIBSection"]
+    B["<b>WndProc Loop</b> — 20 ms<br/>clear → TextOutA → GdiFlush<br/>→ stars → logo+rain<br/>→ BurnEdges → AlphaPass"]
+    C["<b>.bss State</b><br/>mask · tip_l/tip_r<br/>fire · colbits · stars · audio"]
+    D["<b>UpdateLayeredWindow</b><br/>Per-pixel alpha composition"]
+    E["<b>waveOut</b><br/>Hardware audio loop"]
 
     A --> B --> D
     A --> E
@@ -543,6 +543,49 @@ vertical striations of one pluck every 125 ms:
 inline clear  →  TextOutA (scroller)  →  GdiFlush  →  DrawTrail (stars)
    →  logo + Matrix rain + glitch blocks  →  BurnEdges  →  AlphaPass
    →  UpdateLayeredWindow
+```
+
+```mermaid
+flowchart TD
+    subgraph Frame["Frame Pipeline (20 ms Timer Tick)"]
+        direction TB
+        F1["<b>1. Clear Buffer</b><br/><code>rep stosq</code> 32 bpp DIB"]
+        F2["<b>2. Scroll Text</b><br/><code>TextOutA</code> + <code>GdiFlush</code>"]
+        F3["<b>3. Perspective Starfield</b><br/>Project 3D & <code>DrawTrail</code> DDA"]
+        F4["<b>4. Block Logo & Matrix Rain</b><br/>Font rasteriser & drop trails"]
+        F5["<b>5. Sideways Doom Fire</b><br/><code>BurnEdges</code> heat drift & diffuse"]
+        F6["<b>6. SIMD Compositor</b><br/><code>AlphaPass</code> scanlines & <code>pmullw</code>"]
+        F7["<b>7. Desktop Presentation</b><br/><code>UpdateLayeredWindow</code>"]
+
+        F1 --> F2 --> F3 --> F4 --> F5 --> F6 --> F7
+    end
+
+    subgraph State["BSS Memory Buffers"]
+        S1[("pixels<br/>32 bpp ARGB")]
+        S2[("mask · tips<br/>Plank silhouette")]
+        S3[("fire · heat<br/>Flames simulation")]
+        S4[("stars · rain<br/>Interleaved records")]
+    end
+
+    F1 -.-> S1
+    F2 -.-> S1
+    F3 -.-> S1
+    F3 <--> S4
+    F4 -.-> S1
+    F4 <--> S4
+    F5 <--> S3
+    S2 -.-> F6
+    S3 -.-> F6
+    S1 <--> F6
+    S1 -.-> F7
+
+    classDef frame fill:#0a1f2b,stroke:#4bc8ff,color:#dbf3ff
+    classDef bss fill:#2b220a,stroke:#e8c34a,color:#fff3d0
+    classDef out fill:#0b2b1f,stroke:#3ddc97,color:#d8ffe9
+
+    class F1,F2,F3,F4,F5,F6 frame
+    class F7 out
+    class S1,S2,S3,S4 bss
 ```
 
 A `SetTimer` at 20 ms drives it. CPU cost is around 0.05–0.25 s for a five
