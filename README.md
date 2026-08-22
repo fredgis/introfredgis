@@ -175,12 +175,12 @@ An irregular outline with *soft* edges cannot be done with a region —
     lea r9, [ulw_size]
     mov rax, qword [mem_dc]
     mov qword [rsp + 32], rax
-    lea rax, [ulw_src]
+    lea rax, [r9 + 12]
     mov qword [rsp + 40], rax
     mov qword [rsp + 48], r8
-    lea rax, [ulw_blend]
+    lea rax, [r9 + 8]
     mov qword [rsp + 56], rax
-    mov qword [rsp + 64], ULW_ALPHA
+    mov dword [rsp + 64], ULW_ALPHA
     call UpdateLayeredWindow
 ```
 
@@ -207,12 +207,10 @@ they widen to words and go through a single `pmullw` rather than three
 `imul`/`shr` pairs and a shift-and-`or` reassembly:
 
 ```nasm
-    mov edx, dword [r14 + rcx * 4]      ; premultiply the three channels
     movd xmm1, eax
     pshuflw xmm1, xmm1, 0x40            ; the factor spread over words 0..2 and
-    movd xmm0, edx                      ; left at zero in word 3, so the source
-    pxor xmm2, xmm2                     ; alpha byte cannot survive the multiply
-    punpcklbw xmm0, xmm2                ; and the OR below still owns it
+    pxor xmm2, xmm2                     ; left at zero in word 3, so the source
+    punpcklbw xmm0, xmm2                ; alpha byte cannot survive the multiply
     pmullw xmm0, xmm1
     psrlw xmm0, 8
     packuswb xmm0, xmm0
@@ -238,8 +236,7 @@ right, independently, so no two ends line up:
 ```nasm
     call NextRand
     and eax, 15
-    imul eax, eax, 2                    ; 16..TIP_MAX. The spread stays small:
-    add eax, 16                         ; a big one turns the stack into a
+    lea eax, [rax * 2 + 16]             ; 16..TIP_MAX. The spread stays small:
     mov r14d, eax                       ; visible staircase of black steps
 ```
 
@@ -380,9 +377,7 @@ heat rises:
     lea r8d, [rax + rax * 2]            ; B = 3f/4
     shr r8d, 2
     or edx, r8d
-    mov r8d, eax                        ; G = f
-    shl r8d, 8
-    or edx, r8d
+    mov dh, al                          ; G = f
 ```
 
 | heat | R | G | B | reads as |
@@ -436,11 +431,9 @@ palette entries deep:
     mov eax, dword [rbx + RN_Y]
     sar eax, 6                          ; head, in block rows
     sub eax, r13d
-    js .rain_next
     cmp eax, GLYPH_ROWS
     jae .rain_next
-    lea rcx, [colbits]
-    mov ecx, dword [rcx + r12 * 4]
+    mov ecx, dword [r15 + r12 * 4]
     bt ecx, eax                         ; is there a block here at all?
     jnc .rain_next
 ```
@@ -472,8 +465,8 @@ loop**, so the demo spends zero instructions per frame on audio.
 
 ```nasm
     lea rbx, [wave_hdr]                 ; one base for the whole header
-    mov dword [rbx + 24], 0x0C          ; WHDR_BEGINLOOP | WHDR_ENDLOOP
-    mov dword [rbx + 28], -1            ; and never stop looping
+    mov byte [rbx + 24], 0x0C           ; WHDR_BEGINLOOP | WHDR_ENDLOOP
+    or dword [rbx + 28], -1             ; and never stop looping
 ```
 
 That trick is what keeps it cheap: no callback, no streaming thread, no double
@@ -499,14 +492,13 @@ note_incr     dw 536, 568, 601, 637, 675, 715, 758, 803, 851, 901, 955, 1011
 NoteIncr:
     mov eax, ecx
     and eax, 15                         ; semitone picks the table entry,
-    lea rdx, [note_incr]                ; octave is a shift: doubling the
-    movzx ebx, word [rdx + rax * 2]     ; frequency is doubling the increment
+    movzx ebx, word [rbp + rax * 2 + (note_incr - arp_tab)]
     shr ecx, 4
     shl ebx, cl
     ret
 ```
 
-The song is 24 bytes: four chords, `Am F C G`, two seconds each, four arpeggio
+The song is 22 bytes: four chords, `Am F C G`, two seconds each, four arpeggio
 notes per chord, then a per-part octave offset.
 
 ```nasm
@@ -516,8 +508,7 @@ arp_tab       db 0x39, 0x40, 0x44, 0x49
               db 0x37, 0x3B, 0x42, 0x47
 bass_tab      db 0x19, 0x15, 0x10, 0x17
 
-part_lead     db 0, -16
-part_bass     db 0, -16
+part_octave   db 0, -16
 ```
 
 Those last four bytes are the whole structure: the first eight seconds play it
@@ -530,13 +521,11 @@ The one thing that separates a tracker from an organ is the envelope. Every
 note decays linearly across its own row, so each one has an attack:
 
 ```nasm
-    mov r9d, r10d
-    shr r9d, 2
     mov r8d, 250                        ; linear pluck: every note decays over
-    sub r8d, r9d                        ; its own row, so the tune has attack
-    jns .env_ok
-    xor r8d, r8d
-.env_ok:
+    mov r9d, r10d                       ; its own row, so the tune has attack
+    shr r9d, 2
+    sub r8d, r9d
+    shr r8d, 3
 ```
 
 A spectrogram of the rendered buffer shows the whole structure falling out of
@@ -722,8 +711,8 @@ most of the classic peephole set was already in place — there is not a single
 The REX figure is a hard ceiling, not a plan: it assumes the whole program fits
 in the seven usable legacy registers, and `AlphaPass` alone keeps eight values
 live. Everything realistically left is **under a hundred bytes**, against 480
-for a block — and the 16 bytes that *were* taken moved `.text` from 4 064 to
-4 048 and the file not at all.
+for a block — and the peephole and layout passes brought `.text` from 4 064
+down to 3 568 and the file from 5 632 to 5 120 bytes.
 
 Two things in Agner's chapter are worth reading the other way round, because
 they are what the pass above was already doing without knowing it: *"instructions
