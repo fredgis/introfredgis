@@ -183,8 +183,7 @@ DrawBlock:
     add ecx, dword [x_pos]              ; here rather than at the three call
     imul edx, edx, SCALE                ; sites that used to do it themselves
     add edx, dword [y_pos]
-    mov eax, edx
-    imul eax, eax, SCR_W
+    imul eax, edx, SCR_W
     add eax, ecx
     shl eax, 2
     push rdi
@@ -265,14 +264,12 @@ ResetStar:
 ; Perspective projection of the star rbx points at.
 ; ----------------------------------------------------------------------------
 ProjectStar:
-    mov eax, dword [rbx + ST_X]
-    imul eax, eax, STAR_FOV
+    imul eax, dword [rbx + ST_X], STAR_FOV
     cdq
     idiv dword [rbx + ST_Z]
     add eax, CX
     mov dword [rbx + ST_SX], eax
-    mov eax, dword [rbx + ST_Y]
-    imul eax, eax, STAR_FOV
+    imul eax, dword [rbx + ST_Y], STAR_FOV
     cdq
     idiv dword [rbx + ST_Z]
     add eax, CY
@@ -1085,8 +1082,7 @@ DrawFrame:
     shr r13d, 3
     xor r12d, r12d
 .glitch:
-    mov eax, r12d
-    imul eax, eax, -1640531527
+    imul eax, r12d, -1640531527
     add eax, r13d
     imul eax, eax, 1103515245
     mov r14d, eax

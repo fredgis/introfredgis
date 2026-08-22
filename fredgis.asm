@@ -240,8 +240,7 @@ DrawBlock:
     add ecx, dword [x_pos]              ; here rather than at the three call
     imul edx, edx, SCALE                ; sites that used to do it themselves
     add edx, dword [y_pos]
-    mov eax, edx
-    imul eax, eax, SCR_W
+    imul eax, edx, SCR_W
     add eax, ecx
     shl eax, 2
     push rdi
@@ -322,14 +321,12 @@ ResetStar:
 ; Perspective projection of the star rbx points at.
 ; ----------------------------------------------------------------------------
 ProjectStar:
-    mov eax, dword [rbx + ST_X]
-    imul eax, eax, STAR_FOV
+    imul eax, dword [rbx + ST_X], STAR_FOV
     cdq
     idiv dword [rbx + ST_Z]
     add eax, CX
     mov dword [rbx + ST_SX], eax
-    mov eax, dword [rbx + ST_Y]
-    imul eax, eax, STAR_FOV
+    imul eax, dword [rbx + ST_Y], STAR_FOV
     cdq
     idiv dword [rbx + ST_Z]
     add eax, CY
@@ -983,7 +980,8 @@ StartMusic:
     jb .row
 
     lea rcx, [wave_out]
-    mov edx, -1                         ; WAVE_MAPPER
+    push -1
+    pop rdx                             ; WAVE_MAPPER
     lea r8, [wave_fmt]
     xor r9d, r9d
     mov qword [rsp + 32], r9
@@ -997,7 +995,7 @@ StartMusic:
     mov qword [rbx], rax
     mov dword [rbx + 8], AUDIO_LEN
     mov dword [rbx + 24], 0x0C          ; WHDR_BEGINLOOP | WHDR_ENDLOOP
-    mov dword [rbx + 28], -1            ; and never stop looping
+    or dword [rbx + 28], -1             ; and never stop looping
     mov rsi, qword [wave_out]
 
     mov rcx, rsi
@@ -1394,8 +1392,7 @@ WndProc:
     shr r13d, 3
     xor r12d, r12d
 .glitch:
-    mov eax, r12d
-    imul eax, eax, -1640531527
+    imul eax, r12d, -1640531527
     add eax, r13d
     imul eax, eax, 1103515245
     mov r14d, eax
