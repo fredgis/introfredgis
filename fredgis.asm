@@ -383,7 +383,8 @@ InitField:
     jnz .stars
 
     lea rbx, [rain]
-    mov r12d, LOGO_COLS
+    push LOGO_COLS
+    pop r12
 .rain:
     call NextRand
     and eax, 1023
@@ -448,7 +449,8 @@ MakeMask:
     imul ebx, ebx, PLANK_H              ; per row, not per plank
     mov r9, rsi
     mov r8, rdi
-    mov r11d, PLANK_H
+    push PLANK_H
+    pop r11
 .tip:
     call NextRand
     and eax, 7                          ; wobble each row a few pixels: a tip
@@ -466,7 +468,8 @@ MakeMask:
     jnz .tip
 
     sub rbx, PLANK_H                    ; rewind: the row loop walks it again
-    mov r11d, PLANK_H
+    push PLANK_H
+    pop r11
 .row:
     mov r14d, dword [rsi + rbx * 4]     ; this row has its own pair of tips
     mov r15d, dword [rdi + rbx * 4]
@@ -1118,7 +1121,8 @@ DemoMain:
     mov qword [pixels], rax
 
     mov rcx, r12
-    mov edx, TRANSPARENT
+    push TRANSPARENT
+    pop rdx
     call SetBkMode
 
     ; ---- the only system font left, and it never changes afterwards
@@ -1158,7 +1162,8 @@ DemoMain:
     mov rcx, qword [window_handle]
     push 1
     pop rdx
-    mov r8d, TIMER_MS
+    push TIMER_MS
+    pop r8
     xor r9d, r9d
     call SetTimer
 
@@ -1225,7 +1230,8 @@ WndProc:
     call ReleaseCapture
     mov rcx, qword [rsp + 80]
     mov edx, WM_NCLBUTTONDOWN
-    mov r8d, HTCAPTION
+    push HTCAPTION
+    pop r8
     xor r9d, r9d
     call SendMessageA
     jmp .zero
@@ -1273,7 +1279,8 @@ WndProc:
     mov dword [y_pos], eax
 
     lea rbx, [rain]                     ; drops fall in 1/64 of a block row
-    mov r12d, LOGO_COLS
+    push LOGO_COLS
+    pop r12
 .rain_step:
     mov eax, dword [rbx + RN_Y]
     add eax, dword [rbx + RN_V]
@@ -1440,7 +1447,8 @@ WndProc:
     mov r14d, eax
     shr eax, 9
     xor edx, edx
-    mov ecx, LOGO_COLS
+    push LOGO_COLS
+    pop rcx
     div ecx                             ; edx = block column
     mov r15d, edx
 
