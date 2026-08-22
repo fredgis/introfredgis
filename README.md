@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/fredgis/introfredgis/releases/latest/download/fredgis.exe"><b>⬇ fredgis.exe</b> — 5 632 bytes, everything</a><br>
+  <a href="https://github.com/fredgis/introfredgis/releases/latest/download/fredgis.exe"><b>⬇ fredgis.exe</b> — 5 120 bytes, everything</a><br>
   <a href="https://github.com/fredgis/introfredgis/releases/latest/download/fredgis4k.exe"><b>⬇ fredgis4k.exe</b> — 4 096 bytes, no sound, no scroller</a>
 </p>
 
@@ -30,7 +30,7 @@ whole block comes free — the only way down was to give up features.
 
 | | `fredgis.asm` | `fredgis4k.asm` |
 | --- | :---: | :---: |
-| **size** | **5 632 bytes** | **4 096 bytes** |
+| **size** | **5 120 bytes** | **4 096 bytes** |
 | imported symbols | 21, four DLLs | 8, three DLLs |
 | burning plank window, layered alpha | ✅ | ✅ |
 | block logo, Matrix rain, glitch | ✅ | ✅ |
@@ -88,7 +88,7 @@ toolchain, both on `PATH`.
 ```
 
 ```
-fredgis.exe      5632 bytes
+fredgis.exe      5120 bytes
 fredgis4k.exe    4096 bytes
 ```
 
@@ -582,7 +582,7 @@ second run.
 
 # Size
 
-The demo is **5 632 bytes**, sound included. Getting there was a fight with the
+The demo is **5 120 bytes**, sound included. Getting there was a fight with the
 PE layout at least as much as with the code.
 
 A PE file is `SizeOfHeaders` plus every section rounded up to the 512 byte file
@@ -590,10 +590,10 @@ alignment, so the real currency is *blocks*, not instructions:
 
 ```
 headers   0x0200                        (448 of 512 used)
-.text     0x0E30  →  0x1000             (3632 of 4096 used)
+.text     0x0E00  →  0x0E00             (3584 of 3584 used)
 .idata    0x03DC  →  0x0400             ( 988 of 1024 used)
                      ------
-                     0x1600  =  5632
+                     0x1400  =  5120
 ```
 
 ![byte budget](docs/bytes.png)
@@ -608,7 +608,8 @@ headers   0x0200                        (448 of 512 used)
 | **+ 16 s chiptune** | 7 168 | `.text` crossed 0x1000 and `winmm` pushed `.idata` past 0x400: two blocks |
 | optimisation pass | 6 656 | five imports deleted outright |
 | optimisation pass | 6 144 | interleaved records, hoisted bases, dead fast paths removed |
-| `pecompact.ps1` | **5 632** | the padded header block |
+| `pecompact.ps1` | 5 632 | the padded header block |
+| instruction & layout diet | **5 120** | `.text` drops under 3 584 (7 blocks) |
 
 The graphics-only demo was 6 144 bytes. It now has a soundtrack **and** is
 512 bytes smaller than it was without one.
@@ -678,7 +679,7 @@ linkers emit 0x200 to begin with.
 
 ## Where it stops
 
-`.text` holds 3 632 bytes in a 4 096 block and `.idata` 988 in a 1 024 block.
+`.text` holds 3 584 bytes in a 3 584 block and `.idata` 988 in a 1 024 block.
 Because the file is quantised in 512 byte steps, **shaving another twenty or
 fifty bytes changes nothing at all** — the next gain needs a whole block.
 
@@ -691,7 +692,7 @@ tricks do not get you there:
 | drop the high octave from the tune | −16 bytes, **file unchanged** |
 | apply every peephole idiom left | under 100 bytes, **file unchanged** |
 | `rep stosd` block fill and a SIMD premultiply | −32 in `.text`, **file unchanged** |
-| drop music + scroller + drag + window class | −944 in `.text`, −520 in `.idata`, **file 5 632 → 4 096** |
+| drop music + scroller + drag + window class | −928 in `.text`, −520 in `.idata`, **file 5 120 → 4 096** |
 
 The measured floor for `.idata` is the interesting part. Eleven imports — the
 smallest set that still creates a layered window and blits it — assembles to

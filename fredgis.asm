@@ -224,8 +224,7 @@ global WndProc
 ; Linear congruential generator -> eax
 ; ----------------------------------------------------------------------------
 NextRand:
-    mov eax, dword [rng_seed]
-    imul eax, eax, 1664525
+    imul eax, dword [rng_seed], 1664525
     add eax, 1013904223
     mov dword [rng_seed], eax
     shr eax, 11                         ; the low bits of an LCG are far too
@@ -529,55 +528,53 @@ DrawTrail:
     shl esi, 16
     mov edi, edx                        ; y in 16.16
     shl edi, 16
-    mov r10d, r8d                       ; dx
-    sub r10d, ecx
-    mov r11d, r9d                       ; dy
-    sub r11d, edx
+    sub r8d, ecx
+    sub r9d, edx
 
-    mov eax, r10d                       ; steps = max(|dx|, |dy|)
+    mov eax, r8d                        ; steps = max(|dx|, |dy|)
     test eax, eax
     jns .abs_dx
     neg eax
 .abs_dx:
-    mov ecx, r11d
+    mov ecx, r9d
     test ecx, ecx
     jns .abs_dy
     neg ecx
 .abs_dy:
     cmp ecx, eax
     cmovg eax, ecx
-    mov r9d, eax
-    test r9d, r9d
-    jz .plot                            ; head and tail on the same pixel
-    mov eax, r10d                       ; per step increments
-    shl eax, 16
-    cdq
-    idiv r9d
     mov r10d, eax
-    mov eax, r11d
+    test r10d, r10d
+    jz .plot                            ; head and tail on the same pixel
+    mov eax, r8d                        ; per step increments
     shl eax, 16
     cdq
-    idiv r9d
-    mov r11d, eax
+    idiv r10d
+    mov r8d, eax
+    mov eax, r9d
+    shl eax, 16
+    cdq
+    idiv r10d
+    mov r9d, eax
 .plot:
-    inc r9d
-    mov r8, qword [pixels]
+    inc r10d
+    mov rcx, qword [pixels]
 .step:
     mov eax, esi
     sar eax, 16
     cmp eax, SCR_W                      ; unsigned: also catches negatives
     jae .skip
-    mov ecx, edi
-    sar ecx, 16
-    cmp ecx, SCR_H
+    mov edx, edi
+    sar edx, 16
+    cmp edx, SCR_H
     jae .skip
-    imul ecx, ecx, SCR_W
-    add ecx, eax
-    mov dword [r8 + rcx * 4], ebx
+    imul edx, edx, SCR_W
+    add edx, eax
+    mov dword [rcx + rdx * 4], ebx
 .skip:
-    add esi, r10d
-    add edi, r11d
-    dec r9d
+    add esi, r8d
+    add edi, r9d
+    dec r10d
     jnz .step
     pop rdi
     pop rsi
@@ -1011,24 +1008,24 @@ start:
 DemoMain:
     push r12
     push rdi
-    sub rsp, 328
+    sub rsp, 120
 
     rdtsc                               ; a moving seed with no import at all:
     or eax, 1                           ; the planks are torn differently on
     mov dword [rng_seed], eax           ; every launch
 
-    lea rdi, [rsp + 112]
+    lea rdi, [rsp + 32]
     xor eax, eax
     push 9
     pop rcx
     rep stosq
 
     lea rax, [WndProc]
-    mov qword [rsp + 120], rax          ; lpfnWndProc, NULL hInstance is fine
+    mov qword [rsp + 40], rax           ; lpfnWndProc, NULL hInstance is fine
     lea rax, [class_name]               ; hCursor stays NULL: the pointer keeps
-    mov qword [rsp + 176], rax          ; whatever shape it already had
+    mov qword [rsp + 96], rax           ; whatever shape it already had
 
-    lea rcx, [rsp + 112]
+    lea rcx, [rsp + 32]
     call RegisterClassA
 
     lea rdi, [rsp + 32]
@@ -1056,15 +1053,13 @@ DemoMain:
     mov rcx, r12
     lea rdx, [dib_head]                 ; a constant, so it lives in .text
     xor r8d, r8d
-    lea r9, [rsp + 288]
+    lea r9, [pixels]
     mov qword [rsp + 32], r8
     mov qword [rsp + 40], r8
     call CreateDIBSection
     mov rcx, r12
     mov rdx, rax
     call SelectObject
-    mov rax, qword [rsp + 288]
-    mov qword [pixels], rax
 
     mov rcx, r12
     push TRANSPARENT
@@ -1115,14 +1110,14 @@ DemoMain:
     call SetTimer
 
 .message_loop:
-    lea rcx, [rsp + 192]
+    lea rcx, [rsp + 40]
     xor edx, edx
     xor r8d, r8d
     xor r9d, r9d
     call GetMessageA
     test eax, eax
     jle .quit
-    lea rcx, [rsp + 192]
+    lea rcx, [rsp + 40]
     call DispatchMessageA
     jmp .message_loop
 
@@ -1132,15 +1127,6 @@ DemoMain:
 
 ; ----------------------------------------------------------------------------
 ; rcx = hwnd, edx = message, r8 = wParam, r9 = lParam
-;
-; Frame layout:
-;   rsp+0..79     shadow space and arguments
-;   rsp+80        hwnd
-;   rsp+88        memory DC
-;   rsp+96        SIZE of the layered surface
-;   rsp+104       POINT source origin
-;   rsp+112       BLENDFUNCTION
-;   rsp+120/124   tail of the star trail
 ; ----------------------------------------------------------------------------
 WndProc:
     push r12
@@ -1148,7 +1134,7 @@ WndProc:
     push r14
     push r15
     push rbx
-    sub rsp, 176
+    sub rsp, 88
 
     mov qword [rsp + 80], rcx
 
@@ -1423,7 +1409,7 @@ WndProc:
     xor eax, eax
 
 .done:
-    add rsp, 176
+    add rsp, 88
     pop rbx
     pop r15
     pop r14
