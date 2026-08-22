@@ -19,9 +19,9 @@
 ; we do not have, which is worth a kilobyte in the final image:
 ;   $lib = Join-Path (Split-Path (Split-Path (Get-Command ld).Source)) `
 ;          "x86_64-w64-mingw32\lib"
-;   nasm -Ox -f win64 fredgis.asm -o fredgis.o
-;   ld -mi386pep --subsystem windows -e start -s -T tiny.ld -o fredgis.exe `
-;      fredgis.o "-L$lib" -lkernel32 -luser32 -lgdi32 -lwinmm
+;   nasm -Ox -f win64 fredgis4k.asm -o fredgis4k.o
+;   ld -mi386pep --subsystem windows -e start -s -T tiny.ld -o fredgis4k.exe `
+;      fredgis4k.o "-L$lib" -lkernel32 -luser32 -lgdi32
 ; ============================================================================
 
 bits 64
@@ -64,13 +64,6 @@ default rel
                                          ; straight black to green seam right
                                          ; where the source sits
 %define SCANLINE            205          ; colour scale of every odd row
-
-%define SND_HZ              8000         ; crunchy on purpose: this is the
-                                         ; sample rate a 1990s intro would use
-%define SND_ROWS            128          ; two parts of eight seconds: the riff,
-                                         ; then the same thing an octave down
-%define SND_ROWLEN          1000         ; 125 ms, so the loop is eight seconds
-%define AUDIO_LEN           (SND_ROWS * SND_ROWLEN)
 
 %define STARS               200
 
@@ -147,29 +140,6 @@ dib_head      dd 40                       ; BITMAPINFOHEADER, a pure constant:
               dw 1, 32                    ; biPlanes, biBitCount, BI_RGB
               dd 0, 0, 0, 0, 0, 0
 
-; One octave of phase increments for the 8 kHz oscillators: incr = f * 65536
-; / SND_HZ, starting at C2. Any higher octave is the same value shifted left,
-; which is why notes are packed as (octave << 4) | semitone.
-note_incr     dw 536, 568, 601, 637, 675, 715, 758, 803, 851, 901, 955, 1011
-
-; The tune: Am - F - C - G, two seconds each, four arpeggio notes per chord.
-arp_tab       db 0x39, 0x40, 0x44, 0x49
-              db 0x35, 0x39, 0x40, 0x45
-              db 0x30, 0x34, 0x37, 0x40
-              db 0x37, 0x3B, 0x42, 0x47
-bass_tab      db 0x19, 0x15, 0x10, 0x17
-
-; Octave offsets per part. Nothing goes up: at 8 kHz the Nyquist limit is
-; 4 kHz, and a pulse wave whose harmonics fold back around it turns to noise,
-; so the second half drops an octave instead of climbing one.
-part_lead     db 0, -16
-part_bass     db 0, -16
-
-wave_fmt      dw 1, 1                     ; WAVE_FORMAT_PCM, mono
-              dd SND_HZ, SND_HZ           ; one byte per sample, so the byte
-              dw 1, 8                     ; rate is the sample rate
-              dw 0
-
 section .bss
 window_handle resq 1
 mem_dc        resq 1
@@ -191,9 +161,6 @@ colbits       resd LOGO_COLS              ; one bit per block row of the logo
 rain          resd LOGO_COLS * RN_N       ; drop head in 1/64 of a block row,
                                           ; then its speed
 stars         resd STARS * ST_N           ; x, y, z, screen x/y, previous x/y
-wave_out      resq 1
-wave_hdr      resb 48                     ; WAVEHDR, x64 layout
-audio         resb AUDIO_LEN              ; the whole tune, rendered once
 
 section .text
 global start
