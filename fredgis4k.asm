@@ -685,6 +685,7 @@ AlphaPass:
     sub edi, FLAME_IN
     xor ecx, ecx
 .col:
+    movd xmm0, dword [r14 + rcx * 4]    ; pixel loaded once for flame and premultiply
     movzx r10d, byte [r13 + rcx]        ; coverage straight from the mask
     mov eax, esi
     sub eax, ecx
@@ -726,19 +727,16 @@ AlphaPass:
     shr r8d, 2
     or edx, r8d
     mov dh, al                          ; G = f
-    movd xmm0, dword [r14 + rcx * 4]    ; saturating add over all channels
     movd xmm1, edx
     paddusb xmm0, xmm1
-    movd dword [r14 + rcx * 4], xmm0
 .no_flame:
     mov eax, r10d                       ; one path for every pixel: coverage 0
     imul eax, r11d                      ; premultiplies to a transparent black
     shr eax, 8                          ; and coverage 255 to the pixel itself,
     movd xmm1, eax                      ; so the two shortcuts they used to have
     pshuflw xmm1, xmm1, 0x40            ; the factor spread over words 0..2 and
-    movd xmm0, dword [r14 + rcx * 4]    ; left at zero in word 3, so the source
-    pxor xmm2, xmm2                     ; alpha byte cannot survive the multiply
-    punpcklbw xmm0, xmm2                ; and the OR below still owns it
+    pxor xmm2, xmm2                     ; left at zero in word 3, so the source
+    punpcklbw xmm0, xmm2                ; alpha byte cannot survive the multiply
     pmullw xmm0, xmm1
     psrlw xmm0, 8
     packuswb xmm0, xmm0
@@ -798,9 +796,9 @@ DemoMain:
     mov dword [rsp + 48], SCR_W
     mov dword [rsp + 56], SCR_H
     mov ecx, WS_EX_LAYERED
-    lea rdx, [class_name]               ; a predefined class, so there is no
-    xor r8d, r8d                        ; window procedure to register and no
-    mov r9d, WS_POPUP_VISIBLE           ; WNDCLASS to fill in
+    mov edx, 0x8004                     ; predefined atom for "STATIC" class
+    xor r8d, r8d                        ; so no string in .text and no
+    mov r9d, WS_POPUP_VISIBLE           ; WNDCLASS to register
     call CreateWindowExA
     mov qword [window_handle], rax
 
