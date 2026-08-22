@@ -60,14 +60,14 @@ function Budget($total, $parts, $rows, $sub1, $sub2, $note1, $note2, $used, $fil
 Budget '5 632' `
     @(@{n='headers';b=512;c=$pink}, @{n='.text';b=4096;c=$teal}, @{n='.idata';b=1024;c=$blue}) `
     @(
-        @{n='WndProc      frame loop and import thunks';      b=1075; c=$teal},
+        @{n='WndProc      frame loop and import thunks';      b=1076; c=$teal},
         @{n='DemoMain     window, layered DIB, GDI font';     b=439;  c=$blue},
         @{n='StartMusic   chiptune synthesis and waveOut';    b=409;  c=$pink},
         @{n='starfield    project, trail, respawn';           b=353;  c=$blue},
         @{n='AlphaPass    premultiplied compositor';          b=353;  c=$teal},
         @{n='MakeMask     plank silhouette and smoothstep';   b=297;  c=$pink},
         @{n='BurnEdges    the fire simulation';               b=333;  c=$teal},
-        @{n='data         font, palette, tune, scroll text';  b=278;  c=$amber},
+        @{n='data         font, palette, tune, scroll text';  b=277;  c=$amber},
         @{n='logo + rain  block font rasteriser';             b=143;  c=$blue},
         @{n='entry + RNG';                                    b=27;   c=$grey}
     ) `

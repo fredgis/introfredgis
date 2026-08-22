@@ -139,7 +139,7 @@ extern waveOutWrite
 ; ----------------------------------------------------------------------------
 section .text
 
-class_name    db "FG", 0
+class_name    db "F", 0
 scroll_font   db "Lucida Console", 0
 
 ; Block font, 8x8 per letter, most significant bit on the left. Only the seven
